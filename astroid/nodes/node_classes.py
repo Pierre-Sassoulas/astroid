@@ -595,7 +595,7 @@ class Name(_base_nodes.LookupMixIn, _base_nodes.NoChildrenNode):
         context.lookupname = self.name
         context.constraints[self.name] = get_constraints(self, frame)
 
-        return _infer_stmts(stmts, context, frame)
+        return _infer_stmts(stmts, context, frame, use=self)
 
 
 class Arguments(

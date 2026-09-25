@@ -155,8 +155,13 @@ def _infer_stmts(
     stmts: Iterable[InferenceResult],
     context: InferenceContext | None,
     frame: nodes.NodeNG | BaseInstance | None = None,
+    use: nodes.Name | None = None,
 ) -> collections.abc.Generator[InferenceResult]:
-    """Return an iterator on statements inferred by each statement in *stmts*."""
+    """Return an iterator on statements inferred by each statement in *stmts*.
+
+    ``use`` is the name being inferred, to account for mutations of the value
+    between each statement and the use.
+    """
     inferred = False
     constraint_failed = False
     if context is not None:
@@ -182,7 +187,17 @@ def _infer_stmts(
             for constraint_stmt, potential_constraints in constraints.items():
                 if not constraint_stmt.parent_of(stmt):
                     stmt_constraints.update(potential_constraints)
-            for inf in stmt.infer(context=context):
+            inferred_values = stmt.infer(context=context)
+            if use is not None:
+                # pylint: disable-next=import-outside-toplevel
+                from astroid.mutation import apply_mutations
+
+                inferred_values = (
+                    mutated
+                    for inf in inferred_values
+                    for mutated in apply_mutations(inf, stmt, use, frame, context)
+                )
+            for inf in inferred_values:
                 if all(
                     constraint.satisfied_by(inf, context)
                     for constraint in stmt_constraints
