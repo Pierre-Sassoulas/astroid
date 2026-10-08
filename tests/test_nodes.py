@@ -2517,6 +2517,13 @@ int | str  #@
 abc.ABCMeta  #@
 """
 
+INFERRED_TYPE_PARAMETERS = """
+def function[T, **P, *Ts]():
+    T  #@
+    P  #@
+    Ts  #@
+"""
+
 
 def _inferred_values(code: str) -> list[tuple[str, SuccessfulInferenceResult]]:
     return [
@@ -2531,6 +2538,11 @@ def _inferred_values(code: str) -> list[tuple[str, SuccessfulInferenceResult]]:
     "code",
     [
         pytest.param(INFERRED_VALUES, id="values"),
+        pytest.param(
+            INFERRED_TYPE_PARAMETERS,
+            id="type-parameters",
+            marks=pytest.mark.skipif(not PY312_PLUS, reason="PEP 695 syntax"),
+        ),
     ],
 )
 def test_inferred_values_are_named(code: str) -> None:

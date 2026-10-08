@@ -369,7 +369,10 @@ class BaseContainer(_base_nodes.ParentAssignNode, Instance, metaclass=abc.ABCMet
                 starred = util.safe_infer(elt.value, context)
                 if not starred:
                     raise InferenceError(node=self, context=context)
-                if isinstance(starred, TypeVarTuple):
+                if (
+                    isinstance(starred, Instance)
+                    and starred.qname() == "typing.TypeVarTuple"
+                ):
                     # TypeVarTuple unpacking (*Ts) represents a variadic
                     # type parameter, not an iterable to expand.
                     values.append(elt)

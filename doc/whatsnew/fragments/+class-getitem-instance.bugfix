@@ -1,4 +1,12 @@
+A PEP 695 type parameter (``def f[T]()``) now infers to an instance of
+``typing.TypeVar``, ``typing.ParamSpec`` or ``typing.TypeVarTuple``, what it is at
+runtime, instead of its definition node. Like any other inferred value it has a
+string ``name`` and its attributes (``__name__``, ``__bound__``, ``args``...), so
+consumers no longer crash looking them up.
+
 Subscripting a class with an instance that has no ``__index__`` (``Box[Apple()]``)
 now infers through ``__class_getitem__``, which takes any object; only sequences
 need ``__index__``. ``typing.Generic`` also declares its empty ``__slots__``, so the
 slots of a ``Generic`` subclass are still known now that its base is inferred.
+
+Refs pylint-dev/pylint#11510

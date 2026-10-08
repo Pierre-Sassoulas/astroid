@@ -433,29 +433,86 @@ def infer_typing_cast(
     return node.args[1].infer(context=ctx)
 
 
+def _type_parameter_stubs() -> str:
+    """Stubs for ``TypeVar``, ``ParamSpec`` and ``TypeVarTuple``.
+
+    A PEP 695 type parameter infers to an instance of one of them, so they
+    declare the attributes that the real classes give their instances.
+    """
+    # PEP 696 added defaults in 3.13, PEP 649 lazily evaluated bounds in 3.14
+    init_default = (
+        ['    self.__default__ = kwargs.get("default")'] if PY313_PLUS else []
+    )
+    defaults = (
+        ["def has_default(self): return self.__default__ is not None"]
+        if PY313_PLUS
+        else []
+    )
+    if PY314_PLUS:
+        defaults.append("evaluate_default = None")
+    evaluate_bound = (
+        ["evaluate_bound = None", "evaluate_constraints = None"] if PY314_PLUS else []
+    )
+    variance = [
+        "__covariant__ = False",
+        "__contravariant__ = False",
+        "__infer_variance__ = False",
+    ]
+    classes = {
+        "TypeVar": [
+            "def __init__(self, name, *constraints, **kwargs):",
+            "    self.__name__ = name",
+            "    self.__constraints__ = constraints",
+            '    self.__bound__ = kwargs.get("bound")',
+            *init_default,
+            *variance,
+            *defaults,
+            *evaluate_bound,
+            "def __or__(self, right): ...",
+            "def __ror__(self, left): ...",
+            "@classmethod",
+            "def __class_getitem__(cls, item):  return cls",
+        ],
+        "ParamSpec": [
+            "def __init__(self, name, **kwargs):",
+            "    self.__name__ = name",
+            '    self.__bound__ = kwargs.get("bound")',
+            *init_default,
+            *variance,
+            *defaults,
+            "def __or__(self, right): ...",
+            "def __ror__(self, left): ...",
+            "@property",
+            "def args(self): return ParamSpecArgs(self)",
+            "@property",
+            "def kwargs(self): return ParamSpecKwargs(self)",
+        ],
+        "TypeVarTuple": [
+            "def __init__(self, name, **kwargs):",
+            "    self.__name__ = name",
+            *init_default,
+            *defaults,
+            "def __iter__(self): yield self",
+        ],
+    }
+    return "".join(
+        f"class {name}:\n" + "".join(f"    {line}\n" for line in body)
+        for name, body in classes.items()
+    )
+
+
 def _typing_transform():
     code = textwrap.dedent("""
     class Generic:
         __slots__ = ()
         @classmethod
         def __class_getitem__(cls, item):  return cls
-    class ParamSpec:
-        @property
-        def args(self):
-            return ParamSpecArgs(self)
-        @property
-        def kwargs(self):
-            return ParamSpecKwargs(self)
     class ParamSpecArgs: ...
     class ParamSpecKwargs: ...
     class TypeAlias: ...
     class Type:
         @classmethod
         def __class_getitem__(cls, item):  return cls
-    class TypeVar:
-        @classmethod
-        def __class_getitem__(cls, item):  return cls
-    class TypeVarTuple: ...
     class ContextManager:
         @classmethod
         def __class_getitem__(cls, item):  return cls
@@ -469,6 +526,7 @@ def _typing_transform():
         @classmethod
         def __class_getitem__(cls, item):  return cls
     """)
+    code += _type_parameter_stubs()
     if PY314_PLUS:
         code += textwrap.dedent("""
     from annotationlib import ForwardRef

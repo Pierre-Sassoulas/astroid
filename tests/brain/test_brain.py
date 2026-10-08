@@ -16,7 +16,7 @@ import astroid
 from astroid import MANAGER, builder, nodes, objects, test_utils, util
 from astroid.bases import Instance
 from astroid.brain.brain_namedtuple_enum import _get_namedtuple_fields
-from astroid.const import PY312_PLUS, PY313_PLUS, PY315_PLUS
+from astroid.const import PY312_PLUS, PY313_PLUS, PY314_PLUS, PY315_PLUS
 from astroid.exceptions import (
     AttributeInferenceError,
     InferenceError,
@@ -571,6 +571,43 @@ class TypingBrain(unittest.TestCase):
         assert len(ancestors) == 2
         assert ancestors[0].name == "Foo"
         assert ancestors[1].name == "object"
+
+    @test_utils.require_version(minver="3.12")
+    def test_pep695_type_parameter_attributes(self):
+        """A PEP 695 type parameter is an instance of its ``typing`` class,
+        with the attributes the runtime gives it on this Python version.
+        """
+        node = builder.extract_node("""
+        def apple[T, **P, *Ts]():
+            T #@
+            P #@
+            Ts #@
+        """)
+        attributes = {
+            "TypeVar": ["__name__", "__bound__", "__constraints__", "__covariant__"],
+            "ParamSpec": ["__name__", "__bound__", "args", "kwargs"],
+            "TypeVarTuple": ["__name__", "__iter__"],
+        }
+        defaults = ["__default__", "has_default"]
+        lazy_defaults = ["evaluate_default"]
+        for name_node in node:
+            inferred = next(name_node.infer())
+            assert isinstance(inferred, Instance)
+            assert inferred.qname() == f"typing.{inferred.name}"
+            for attribute in attributes[inferred.name]:
+                assert inferred.getattr(attribute)
+            for attribute in defaults:
+                if PY313_PLUS:
+                    assert inferred.getattr(attribute)
+                else:
+                    with self.assertRaises(AttributeInferenceError):
+                        inferred.getattr(attribute)
+            for attribute in lazy_defaults:
+                if PY314_PLUS:
+                    assert inferred.getattr(attribute)
+                else:
+                    with self.assertRaises(AttributeInferenceError):
+                        inferred.getattr(attribute)
 
     def test_typing_annotated_subscriptable(self):
         """typing.Annotated is subscriptable with __class_getitem__ below 3.13."""

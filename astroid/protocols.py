@@ -25,6 +25,7 @@ from astroid.exceptions import (
     InferenceError,
     NoDefault,
 )
+from astroid.manager import AstroidManager
 from astroid.nodes import node_classes
 from astroid.typing import (
     ConstFactoryResult,
@@ -1177,8 +1178,19 @@ def generic_type_assigned_stmts(
     context: InferenceContext | None = None,
     assign_path: None = None,
 ) -> Generator[nodes.NodeNG]:
-    """Return the type parameter node itself so inference doesn't fail
-    when evaluating __class_getitem__ and so that the node's type is
-    preserved for downstream checks (e.g. TypeVarTuple starred handling).
+    """Return what the type parameter is at runtime: an instance of
+    ``typing.TypeVar``, ``typing.ParamSpec`` or ``typing.TypeVarTuple``.
+
+    Like any other inferred value, it then has a ``name``, a ``qname()`` and
+    attributes, instead of exposing the definition node itself.
     """
-    yield self
+    typing_module = AstroidManager().ast_from_module_name("typing")
+    try:
+        typing_class = typing_module.getattr(self.qname().rpartition(".")[2])[0]
+    except AttributeInferenceError:
+        yield util.Uninferable
+        return
+    if isinstance(typing_class, nodes.ClassDef):
+        yield typing_class.instantiate_class()
+    else:
+        yield util.Uninferable

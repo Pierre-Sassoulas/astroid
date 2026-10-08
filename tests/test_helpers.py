@@ -337,12 +337,11 @@ def test_tuple_to_container_inference_error() -> None:
 
 @pytest.mark.skipif(not PY312_PLUS, reason="PEP 695 syntax requires Python 3.12")
 def test_object_type_pep695_type_params() -> None:
-    """PEP 695 type parameters have no concrete type at static-analysis time.
+    """The type of a PEP 695 type parameter is its ``typing`` class.
 
     Regression test for the AssertionError introduced when
     ``generic_type_assigned_stmts`` started yielding the TypeVar/TypeVarTuple/
-    ParamSpec node itself: ``object_type`` previously crashed instead of
-    returning ``Uninferable``.
+    ParamSpec node itself: ``object_type`` crashed on it.
     """
     binop = builder.extract_node("""
     def func[_T](var: _T) -> _T:
@@ -351,10 +350,12 @@ def test_object_type_pep695_type_params() -> None:
     """).annotation
     assert helpers.object_type(binop) is util.Uninferable
 
-    for code in (
-        "type Alias[*Ts] = tuple[*Ts]",
-        "type Alias[**P] = Callable[P, int]",
+    for code, qname in (
+        ("type Alias[*Ts] = tuple[*Ts]", "typing.TypeVarTuple"),
+        ("type Alias[**P] = Callable[P, int]", "typing.ParamSpec"),
     ):
         assign = builder.extract_node(code)
         type_param_name = assign.type_params[0].name
-        assert helpers.object_type(type_param_name) is util.Uninferable
+        object_type = helpers.object_type(type_param_name)
+        assert isinstance(object_type, nodes.ClassDef)
+        assert object_type.qname() == qname

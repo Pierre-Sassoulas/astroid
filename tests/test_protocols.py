@@ -551,30 +551,39 @@ class TestPatternMatching:
 class TestGenericTypeSyntax:
     @staticmethod
     def test_assigned_stmts_type_var():
-        """The assigned statement is the TypeVar node itself."""
+        """The assigned statement is what the type parameter is at runtime:
+        an instance of ``typing.TypeVar``, with a name like any inferred value.
+        """
         assign_stmts = extract_node("type Point[T] = tuple[float, float]")
         type_var: nodes.TypeVar = assign_stmts.type_params[0]
         assigned = next(type_var.name.assigned_stmts())
-        assert isinstance(assigned, nodes.TypeVar)
-        assert assigned is type_var
+        assert isinstance(assigned, Instance)
+        assert assigned.qname() == "typing.TypeVar"
+        assert assigned.name == "TypeVar"
 
     @staticmethod
     def test_assigned_stmts_type_var_tuple():
-        """The assigned statement is the TypeVarTuple node itself."""
+        """The assigned statement is what the type parameter is at runtime:
+        an instance of ``typing.TypeVarTuple``, with a name like any inferred value.
+        """
         assign_stmts = extract_node("type Alias[*Ts] = tuple[*Ts]")
         type_var_tuple: nodes.TypeVarTuple = assign_stmts.type_params[0]
         assigned = next(type_var_tuple.name.assigned_stmts())
-        assert isinstance(assigned, nodes.TypeVarTuple)
-        assert assigned is type_var_tuple
+        assert isinstance(assigned, Instance)
+        assert assigned.qname() == "typing.TypeVarTuple"
+        assert assigned.name == "TypeVarTuple"
 
     @staticmethod
     def test_assigned_stmts_param_spec():
-        """The assigned statement is the ParamSpec node itself."""
+        """The assigned statement is what the type parameter is at runtime:
+        an instance of ``typing.ParamSpec``, with a name like any inferred value.
+        """
         assign_stmts = extract_node("type Alias[**P] = Callable[P, int]")
         param_spec: nodes.ParamSpec = assign_stmts.type_params[0]
         assigned = next(param_spec.name.assigned_stmts())
-        assert isinstance(assigned, nodes.ParamSpec)
-        assert assigned is param_spec
+        assert isinstance(assigned, Instance)
+        assert assigned.qname() == "typing.ParamSpec"
+        assert assigned.name == "ParamSpec"
 
 
 class StubAnnotationInferenceTest(unittest.TestCase):
