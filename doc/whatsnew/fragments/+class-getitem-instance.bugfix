@@ -1,0 +1,4 @@
+Subscripting a class with an instance that has no ``__index__`` (``Box[Apple()]``)
+now infers through ``__class_getitem__``, which takes any object; only sequences
+need ``__index__``. ``typing.Generic`` also declares its empty ``__slots__``, so the
+slots of a ``Generic`` subclass are still known now that its base is inferred.

@@ -436,6 +436,7 @@ def infer_typing_cast(
 def _typing_transform():
     code = textwrap.dedent("""
     class Generic:
+        __slots__ = ()
         @classmethod
         def __class_getitem__(cls, item):  return cls
     class ParamSpec:

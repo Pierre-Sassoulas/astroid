@@ -3613,6 +3613,20 @@ class InferenceTest(resources.SysPathSetup, unittest.TestCase):
         self.assertEqual(second.value, 2)
         self.assertRaises(InferenceError, next, ast_nodes[2].infer())
 
+    def test_class_subscript_with_instance_without__index__(self) -> None:
+        """``__class_getitem__`` takes any object, not only one with ``__index__``."""
+        node = extract_node("""
+        class Box:
+            def __class_getitem__(cls, item):
+                return item
+        class Apple:
+            pass
+        Box[Apple()] #@
+        """)
+        inferred = next(node.infer())
+        assert isinstance(inferred, Instance)
+        assert inferred.name == "Apple"
+
     def test_special_method_masquerading_as_another(self) -> None:
         ast_node = extract_node("""
         class Info(object):

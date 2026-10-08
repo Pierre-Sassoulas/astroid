@@ -3719,7 +3719,6 @@ class Subscript(NodeNG):
     <Subscript l.1 at 0x...>
     """
 
-    _SUBSCRIPT_SENTINEL = object()
     _astroid_fields = ("value", "slice")
     _other_fields = ("ctx",)
 
@@ -3781,19 +3780,11 @@ class Subscript(NodeNG):
                     yield util.Uninferable
                     return None
 
-                # Try to deduce the index value.
-                index_value = self._SUBSCRIPT_SENTINEL
-                if value.__class__ == Instance:
-                    index_value = index
-                elif index.__class__ == Instance:
-                    instance_as_index = helpers.class_instance_as_index(index)
-                    if instance_as_index:
-                        index_value = instance_as_index
-                else:
-                    index_value = index
-
-                if index_value is self._SUBSCRIPT_SENTINEL:
-                    raise InferenceError(node=self, context=context)
+                # Try to deduce the index value. An instance indexes a sequence
+                # through ``__index__``, but ``__class_getitem__`` takes it as is.
+                index_value = index
+                if value.__class__ != Instance and index.__class__ == Instance:
+                    index_value = helpers.class_instance_as_index(index) or index
 
                 try:
                     assigned = value.getitem(index_value, context)
