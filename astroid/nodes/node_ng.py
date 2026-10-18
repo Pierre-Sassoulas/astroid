@@ -527,16 +527,16 @@ class NodeNG:
         for child_node in self.get_children():
             yield from child_node._get_name_nodes()
 
-    def _get_return_nodes_skip_functions(self):
+    def _get_return_nodes_skip_functions(self) -> Iterator[nodes.Return]:
         yield from ()
 
-    def _get_yield_nodes_skip_functions(self):
+    def _get_yield_nodes_skip_functions(self) -> Iterator[nodes.Yield]:
         yield from ()
 
-    def _get_yield_nodes_skip_lambdas(self):
+    def _get_yield_nodes_skip_lambdas(self) -> Iterator[nodes.Yield]:
         yield from ()
 
-    def _infer_name(self, frame, name):
+    def _infer_name(self, frame, name) -> str | None:
         # overridden for ImportFrom, Import, Global, Try, TryStar and Arguments
         pass
 

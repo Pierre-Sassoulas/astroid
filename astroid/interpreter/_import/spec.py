@@ -126,7 +126,7 @@ class ImportlibFinder(Finder):
 
     @staticmethod
     @lru_cache(maxsize=1024)
-    def find_module(
+    def find_module(  # pyright: ignore[reportIncompatibleMethodOverride]
         modname: str,
         module_parts: tuple[str, ...],
         processed: tuple[str, ...],
@@ -279,7 +279,7 @@ class ZipFinder(Finder):
 
     @staticmethod
     @lru_cache(maxsize=1024)
-    def find_module(
+    def find_module(  # pyright: ignore[reportIncompatibleMethodOverride]
         modname: str,
         module_parts: tuple[str, ...],
         processed: tuple[str, ...],
@@ -309,7 +309,7 @@ class PathSpecFinder(Finder):
 
     @staticmethod
     @lru_cache(maxsize=1024)
-    def find_module(
+    def find_module(  # pyright: ignore[reportIncompatibleMethodOverride]
         modname: str,
         module_parts: tuple[str, ...],
         processed: tuple[str, ...],
