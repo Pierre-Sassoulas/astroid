@@ -921,7 +921,7 @@ class Lambda(_base_nodes.FilterStmtsBaseNode, LocalsDictNodeNG):
         self.locals = {}
         """A map of the name of a local variable to the node defining it."""
 
-        self.instance_attrs: dict[str, list[NodeNG]] = {}
+        self.instance_attrs: dict[str, list[InferenceResult]] = {}
 
         super().__init__(
             lineno=lineno,
@@ -1039,13 +1039,12 @@ class Lambda(_base_nodes.FilterStmtsBaseNode, LocalsDictNodeNG):
 
     def getattr(
         self, name: str, context: InferenceContext | None = None
-    ) -> list[NodeNG]:
+    ) -> list[InferenceResult]:
         if not name:
             raise AttributeInferenceError(target=self, attribute=name, context=context)
 
-        found_attrs = []
-        if name in self.instance_attrs:
-            found_attrs = self.instance_attrs[name]
+        # Copy, so that adding the special attribute does not modify instance_attrs
+        found_attrs = list(self.instance_attrs.get(name, []))
         if name in self.special_attributes:
             found_attrs.append(self.special_attributes.lookup(name))
         if found_attrs:
@@ -1158,7 +1157,7 @@ class FunctionDef(
         For example, the ``T`` in ``def func[T]() -> T: ...``.
         """
 
-        self.instance_attrs: dict[str, list[NodeNG]] = {}
+        self.instance_attrs: dict[str, list[InferenceResult]] = {}
 
         super().__init__(
             lineno=lineno,
@@ -1291,13 +1290,12 @@ class FunctionDef(
 
     def getattr(
         self, name: str, context: InferenceContext | None = None
-    ) -> list[NodeNG]:
+    ) -> list[InferenceResult]:
         if not name:
             raise AttributeInferenceError(target=self, attribute=name, context=context)
 
-        found_attrs = []
-        if name in self.instance_attrs:
-            found_attrs = self.instance_attrs[name]
+        # Copy, so that adding the special attribute does not modify instance_attrs
+        found_attrs = list(self.instance_attrs.get(name, []))
         if name in self.special_attributes:
             found_attrs.append(self.special_attributes.lookup(name))
         if found_attrs:
@@ -1898,7 +1896,7 @@ class ClassDef(
         ),
     )
     _other_fields = ("name", "is_dataclass", "position")
-    _other_other_fields = "locals"
+    _other_other_fields = ("locals",)
 
     def __init__(
         self,
@@ -1910,7 +1908,7 @@ class ClassDef(
         end_lineno: int | None,
         end_col_offset: int | None,
     ) -> None:
-        self.instance_attrs: dict[str, NodeNG] = {}
+        self.instance_attrs: dict[str, list[InferenceResult]] = {}
         self.locals = {}
         """A map of the name of a local variable to the node defining it."""
 
