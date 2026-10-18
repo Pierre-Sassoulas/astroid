@@ -52,6 +52,7 @@ SuccessfulInferenceResult = Union["nodes.NodeNG", "bases.Proxy"]
 _SuccessfulInferenceResultT = TypeVar(
     "_SuccessfulInferenceResultT", bound=SuccessfulInferenceResult
 )
+_NodesT = TypeVar("_NodesT", bound="nodes.NodeNG")
 _SuccessfulInferenceResultT_contra = TypeVar(
     "_SuccessfulInferenceResultT_contra",
     bound=SuccessfulInferenceResult,
@@ -88,9 +89,9 @@ class InferFn(Protocol, Generic[_SuccessfulInferenceResultT_contra]):
     ) -> Iterator[InferenceResult]: ...  # pragma: no cover
 
 
-class TransformFn(Protocol, Generic[_SuccessfulInferenceResultT]):
+class TransformFn(Protocol, Generic[_NodesT]):
     def __call__(
         self,
-        node: _SuccessfulInferenceResultT,
-        infer_function: InferFn[_SuccessfulInferenceResultT] = ...,
-    ) -> _SuccessfulInferenceResultT | None: ...  # pragma: no cover
+        node: _NodesT,
+        infer_function: InferFn[_NodesT] = ...,
+    ) -> _NodesT | None: ...  # pragma: no cover

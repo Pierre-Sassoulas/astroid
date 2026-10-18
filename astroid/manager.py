@@ -125,7 +125,7 @@ class AstroidManager:
     def prefer_stubs(self, value: bool) -> None:
         AstroidManager.brain["prefer_stubs"] = value
 
-    def visit_transforms(self, node: nodes.NodeNG) -> InferenceResult:
+    def visit_transforms(self, node: nodes.NodeNG) -> nodes.NodeNG:
         """Visit the transforms and apply them to the given *node*."""
         return self._transform.visit(node)
 
