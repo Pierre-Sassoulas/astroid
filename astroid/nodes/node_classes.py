@@ -2180,7 +2180,7 @@ class Const(_base_nodes.NoChildrenNode, Instance):
             return util.Uninferable if PY314_PLUS else True
         return bool(self.value)
 
-    def _infer(self, context: InferenceContext | None = None) -> Iterator[Const]:
+    def _infer(self, context: InferenceContext | None = None) -> Generator[Const]:
         yield self
 
 
@@ -2452,7 +2452,7 @@ class Dict(NodeNG, Instance):
         """
         return bool(self.items)
 
-    def _infer(self, context: InferenceContext | None = None) -> Iterator[nodes.Dict]:
+    def _infer(self, context: InferenceContext | None = None) -> Generator[nodes.Dict]:
         if not any(isinstance(k, DictUnpack) for k, _ in self.items):
             yield self
         else:
@@ -3435,7 +3435,7 @@ class ParamSpec(_base_nodes.AssignTypeNode):
         """
         return "typing.ParamSpec"
 
-    def _infer(self, context: InferenceContext | None = None) -> Iterator[ParamSpec]:
+    def _infer(self, context: InferenceContext | None = None) -> Generator[ParamSpec]:
         yield self
 
     assigned_stmts = protocols.generic_type_assigned_stmts
@@ -3642,7 +3642,7 @@ class Slice(NodeNG):
         if self.step is not None:
             yield self.step
 
-    def _infer(self, context: InferenceContext | None = None) -> Iterator[Slice]:
+    def _infer(self, context: InferenceContext | None = None) -> Generator[Slice]:
         yield self
 
 
@@ -4145,7 +4145,7 @@ class TypeAlias(_base_nodes.AssignTypeNode, _base_nodes.Statement):
         """
         return "typing.TypeAliasType"
 
-    def _infer(self, context: InferenceContext | None = None) -> Iterator[TypeAlias]:
+    def _infer(self, context: InferenceContext | None = None) -> Generator[TypeAlias]:
         yield self
 
     assigned_stmts: ClassVar[
@@ -4217,7 +4217,7 @@ class TypeVar(_base_nodes.AssignTypeNode):
         """
         return "typing.TypeVar"
 
-    def _infer(self, context: InferenceContext | None = None) -> Iterator[TypeVar]:
+    def _infer(self, context: InferenceContext | None = None) -> Generator[TypeVar]:
         yield self
 
     assigned_stmts = protocols.generic_type_assigned_stmts
@@ -4276,7 +4276,9 @@ class TypeVarTuple(_base_nodes.AssignTypeNode):
         """
         return "typing.TypeVarTuple"
 
-    def _infer(self, context: InferenceContext | None = None) -> Iterator[TypeVarTuple]:
+    def _infer(
+        self, context: InferenceContext | None = None
+    ) -> Generator[TypeVarTuple]:
         yield self
 
     assigned_stmts = protocols.generic_type_assigned_stmts

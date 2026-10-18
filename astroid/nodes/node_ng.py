@@ -29,7 +29,12 @@ from astroid.manager import AstroidManager
 from astroid.nodes.as_string import AsStringVisitor
 from astroid.nodes.const import OP_PRECEDENCE
 from astroid.nodes.utils import Position
-from astroid.typing import InferenceErrorInfo, InferenceResult, InferFn
+from astroid.typing import (
+    InferenceErrorInfo,
+    InferenceResult,
+    InferFn,
+    SuccessfulInferenceResult,
+)
 
 if TYPE_CHECKING:
     from astroid.nodes import _base_nodes
@@ -530,16 +535,16 @@ class NodeNG:
         for child_node in self.get_children():
             yield from child_node._get_name_nodes()
 
-    def _get_return_nodes_skip_functions(self):
+    def _get_return_nodes_skip_functions(self) -> Iterator[nodes.Return]:
         yield from ()
 
-    def _get_yield_nodes_skip_functions(self):
+    def _get_yield_nodes_skip_functions(self) -> Iterator[nodes.Yield]:
         yield from ()
 
-    def _get_yield_nodes_skip_lambdas(self):
+    def _get_yield_nodes_skip_lambdas(self) -> Iterator[nodes.Yield]:
         yield from ()
 
-    def _infer_name(self, frame, name):
+    def _infer_name(self, frame, name) -> str | None:
         # overridden for ImportFrom, Import, Global, Try, TryStar and Arguments
         pass
 
@@ -562,7 +567,7 @@ class NodeNG:
         """
         return list(self.infer())
 
-    def instantiate_class(self):
+    def instantiate_class(self) -> SuccessfulInferenceResult:
         """Instantiate an instance of the defined class.
 
         .. note::
@@ -738,7 +743,9 @@ class NodeNG:
         _repr_tree(self, result, set())
         return "".join(result)
 
-    def bool_value(self, context: InferenceContext | None = None):
+    def bool_value(
+        self, context: InferenceContext | None = None
+    ) -> bool | util.UninferableBase:
         """Determine the boolean value of this node.
 
         The boolean value of a node can have three
