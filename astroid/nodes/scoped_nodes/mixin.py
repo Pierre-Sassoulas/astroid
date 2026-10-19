@@ -13,7 +13,7 @@ from astroid.exceptions import ParentMissingError
 from astroid.filter_statements import _filter_stmts
 from astroid.nodes import _base_nodes, scoped_nodes
 from astroid.nodes.scoped_nodes.utils import builtin_lookup
-from astroid.typing import InferenceResult, SuccessfulInferenceResult
+from astroid.typing import InferenceResult
 
 if TYPE_CHECKING:
     from astroid import nodes
@@ -137,7 +137,7 @@ class LocalsDictNodeNG(_base_nodes.LookupMixIn):
             self._append_node(child_node)
         self.set_local(name or child_node.name, child_node)  # type: ignore[attr-defined]
 
-    def __getitem__(self, item: str) -> SuccessfulInferenceResult:
+    def __getitem__(self, item: str) -> InferenceResult:
         """The first node the defines the given local.
 
         :param item: The name of the locally defined object.
@@ -162,7 +162,7 @@ class LocalsDictNodeNG(_base_nodes.LookupMixIn):
         """
         return list(self.locals.keys())
 
-    def values(self) -> list[SuccessfulInferenceResult]:
+    def values(self) -> list[InferenceResult]:
         """The nodes that define the locals in this scoped node.
 
         :returns: The nodes that define locals.
@@ -173,7 +173,7 @@ class LocalsDictNodeNG(_base_nodes.LookupMixIn):
         # probably not worth the headache
         return [self[key] for key in self.keys()]
 
-    def items(self) -> list[tuple[str, SuccessfulInferenceResult]]:
+    def items(self) -> list[tuple[str, InferenceResult]]:
         """Get the names of the locals and the node that defines the local.
 
         :returns: The names of locals and their associated node.
