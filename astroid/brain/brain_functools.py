@@ -30,10 +30,8 @@ class LruWrappedModel(objectmodel.FunctionModel):
     the decorated function.
     """
 
-    _instance: nodes.FunctionDef
-
     @property
-    def attr___wrapped__(self) -> nodes.FunctionDef:
+    def attr___wrapped__(self) -> nodes.FunctionDef | nodes.Lambda:
         return self._instance
 
     @property

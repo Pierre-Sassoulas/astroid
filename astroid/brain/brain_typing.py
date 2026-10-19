@@ -237,9 +237,6 @@ def infer_typedDict(  # pylint: disable=invalid-name
     node: nodes.FunctionDef, ctx: context.InferenceContext | None = None
 ) -> Iterator[nodes.ClassDef]:
     """Replace TypedDict FunctionDef with ClassDef."""
-    # The TypedDict function comes from the parsed typing module
-    assert node.lineno is not None and node.col_offset is not None
-    assert node.parent is not None
     class_def = nodes.ClassDef(
         name="TypedDict",
         lineno=node.lineno,
@@ -336,8 +333,6 @@ def infer_typing_alias(
         raise InferenceError(node=node.args[0], context=ctx) from e
 
     assign_name = node.parent.targets[0]
-    # The alias comes from parsed source
-    assert assign_name.lineno is not None and assign_name.col_offset is not None
 
     class_def = nodes.ClassDef(
         name=assign_name.name,
@@ -414,8 +409,6 @@ def infer_special_alias(
         raise InferenceError(node=node.args[0], context=ctx) from e
 
     assign_name = node.parent.targets[0]
-    # The alias comes from parsed source
-    assert assign_name.lineno is not None and assign_name.col_offset is not None
     class_def = nodes.ClassDef(
         name=assign_name.name,
         parent=node.parent,
