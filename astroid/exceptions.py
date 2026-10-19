@@ -155,7 +155,7 @@ class NoDefault(AstroidError):
     def __init__(
         self,
         message: str = "{func!r} has no default for {name!r}.",
-        func: nodes.FunctionDef | None = None,
+        func: SuccessfulInferenceResult | None = None,
         name: str | None = None,
         **kws: object,
     ) -> None:
@@ -319,7 +319,7 @@ class AttributeInferenceError(ResolveError):
         self,
         message: str = "{attribute!r} not found on {target!r}.",
         attribute: str = "",
-        target: nodes.NodeNG | bases.BaseInstance | None = None,
+        target: SuccessfulInferenceResult | None = None,
         context: InferenceContext | None = None,
         mros: Iterable[Iterable[nodes.ClassDef]] | None = None,
         super_: objects.Super | None = None,
@@ -354,7 +354,7 @@ class AstroidIndexError(AstroidError):
         self,
         message: str = "",
         node: nodes.NodeNG | bases.Instance | None = None,
-        index: nodes.Subscript | None = None,
+        index: SuccessfulInferenceResult | None = None,
         context: InferenceContext | None = None,
         **kws: object,
     ) -> None:
@@ -371,7 +371,7 @@ class AstroidTypeError(AstroidError):
         self,
         message: str = "",
         node: nodes.NodeNG | bases.Instance | None = None,
-        index: nodes.Subscript | None = None,
+        index: SuccessfulInferenceResult | None = None,
         context: InferenceContext | None = None,
         **kws: object,
     ) -> None:
@@ -399,7 +399,7 @@ class ParentMissingError(AstroidError):
         target: The node for which the parent lookup failed.
     """
 
-    def __init__(self, target: nodes.NodeNG) -> None:
+    def __init__(self, target: SuccessfulInferenceResult) -> None:
         self.target = target
         super().__init__(message=f"Parent not found on {target!r}.")
 
@@ -414,7 +414,7 @@ class StatementMissing(ParentMissingError):
         target: The node for which the parent lookup failed.
     """
 
-    def __init__(self, target: nodes.NodeNG) -> None:
+    def __init__(self, target: SuccessfulInferenceResult) -> None:
         super(ParentMissingError, self).__init__(
             message=f"Statement not found on {target!r}"
         )
