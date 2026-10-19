@@ -1950,7 +1950,7 @@ class Compare(NodeNG):
             if retval is not True:
                 break  # short-circuit
             lhs = rhs  # continue
-        if retval is util.Uninferable:
+        if isinstance(retval, util.UninferableBase):
             yield retval
         else:
             yield Const(retval)

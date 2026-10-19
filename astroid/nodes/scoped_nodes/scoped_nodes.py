@@ -2238,7 +2238,7 @@ class ClassDef(
         """
         # FIXME: should be possible to choose the resolution order
         # FIXME: inference make infinite loops possible here
-        yielded = {self}
+        yielded: set[ClassDef] = {self}
         if context is None:
             context = InferenceContext()
         if not self.bases and self.qname() != "builtins.object":
