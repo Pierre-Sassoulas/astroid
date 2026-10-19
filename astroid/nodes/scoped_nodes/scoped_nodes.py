@@ -844,7 +844,7 @@ class ListComp(ComprehensionScope):
         yield from self.generators
 
 
-def _infer_decorator_callchain(node):
+def _infer_decorator_callchain(node: InferenceResult) -> str | None:
     """Detect decorator call chaining and see if the end result is a
     static or a classmethod.
     """
@@ -1317,6 +1317,8 @@ class FunctionDef(
         Possible values are: method, function, staticmethod, classmethod.
         """
         for decorator in self.extra_decorators:
+            # extra_decorators only keeps calls of a name
+            assert isinstance(decorator.func, node_classes.Name)
             if decorator.func.name in BUILTIN_DESCRIPTORS:
                 return decorator.func.name
 
@@ -1400,7 +1402,7 @@ class FunctionDef(
         return lineno or 0
 
     @cached_property
-    def blockstart_tolineno(self):
+    def blockstart_tolineno(self) -> int:
         """The line on which the beginning of this block ends.
 
         :type: int
@@ -1472,7 +1474,9 @@ class FunctionDef(
         """
         return self.type in {"method", "classmethod"}
 
-    def is_abstract(self, pass_is_abstract=True, any_raise_is_abstract=False) -> bool:
+    def is_abstract(
+        self, pass_is_abstract: bool = True, any_raise_is_abstract: bool = False
+    ) -> bool:
         """Check if the method is abstract.
 
         A method is considered abstract if any of the following is true:
@@ -1540,7 +1544,9 @@ class FunctionDef(
         yield prop_func
         return InferenceErrorInfo(node=self, context=context)
 
-    def infer_yield_result(self, context: InferenceContext | None = None):
+    def infer_yield_result(
+        self, context: InferenceContext | None = None
+    ) -> Iterator[InferenceResult]:
         """Infer what the function yields when called
 
         :returns: What the function yields
@@ -2052,7 +2058,9 @@ class ClassDef(
         """
         return True
 
-    def is_subtype_of(self, type_name, context: InferenceContext | None = None) -> bool:
+    def is_subtype_of(
+        self, type_name: str, context: InferenceContext | None = None
+    ) -> bool:
         """Whether this class is a subtype of the given type.
 
         :param type_name: The name of the type of check against.
@@ -2210,7 +2218,7 @@ class ClassDef(
         return frame._scope_lookup(node, name, offset)
 
     @property
-    def basenames(self):
+    def basenames(self) -> list[str]:
         """The names of the parent classes
 
         Names are given in the order they appear in the class definition.
@@ -2265,7 +2273,9 @@ class ClassDef(
                 except InferenceError:
                     continue
 
-    def local_attr_ancestors(self, name, context: InferenceContext | None = None):
+    def local_attr_ancestors(
+        self, name: str, context: InferenceContext | None = None
+    ) -> Generator[ClassDef]:
         """Iterate over the parents that define the given name.
 
         :param name: The name to find definitions for.
@@ -2286,7 +2296,9 @@ class ClassDef(
             if name in astroid:
                 yield astroid
 
-    def instance_attr_ancestors(self, name, context: InferenceContext | None = None):
+    def instance_attr_ancestors(
+        self, name: str, context: InferenceContext | None = None
+    ) -> Generator[ClassDef]:
         """Iterate over the parents that define the given name as an attribute.
 
         :param name: The name to find definitions for.
@@ -2310,7 +2322,9 @@ class ClassDef(
         """
         return node in self.bases
 
-    def local_attr(self, name, context: InferenceContext | None = None):
+    def local_attr(
+        self, name: str, context: InferenceContext | None = None
+    ) -> list[InferenceResult]:
         """Get the list of assign nodes associated to the given name.
 
         Assignments are looked for in both this class and in parents.
@@ -2321,7 +2335,7 @@ class ClassDef(
         :raises AttributeInferenceError: If no attribute with this name
             can be found in this class or parent classes.
         """
-        result = []
+        result: list[InferenceResult] = []
         if name in self.locals:
             result = self.locals[name]
         else:
@@ -2333,7 +2347,9 @@ class ClassDef(
             return result
         raise AttributeInferenceError(target=self, attribute=name, context=context)
 
-    def instance_attr(self, name, context: InferenceContext | None = None):
+    def instance_attr(
+        self, name: str, context: InferenceContext | None = None
+    ) -> list[InferenceResult]:
         """Get the list of nodes associated to the given attribute name.
 
         Assignments are looked for in both this class and in parents.
