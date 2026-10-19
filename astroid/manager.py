@@ -14,7 +14,7 @@ import os
 import types
 import zipimport
 from collections.abc import Callable, Iterator, Sequence
-from typing import Any, ClassVar
+from typing import TYPE_CHECKING, ClassVar, Protocol
 
 from astroid import nodes
 from astroid.builder import AstroidBuilder, build_namespace_package_module
@@ -36,12 +36,31 @@ from astroid.modutils import (
     modpath_from_file,
 )
 from astroid.transforms import TransformVisitor
-from astroid.typing import AstroidManagerBrain, InferenceResult
+from astroid.typing import (
+    AstroidManagerBrain,
+    InferenceResult,
+    TransformFn,
+    _SuccessfulInferenceResultT,
+)
+
+if TYPE_CHECKING:
+    from astroid.transforms import _Predicate
 
 ZIP_IMPORT_EXTS = (".zip", ".egg", ".whl", ".pyz", ".pyzw")
 
 
-def safe_repr(obj: Any) -> str:
+class _TransformRegistration(Protocol):
+    """The signature of TransformVisitor.[un]register_transform."""
+
+    def __call__(
+        self,
+        node_class: type[_SuccessfulInferenceResultT],
+        transform: TransformFn[_SuccessfulInferenceResultT],
+        predicate: _Predicate[_SuccessfulInferenceResultT] | None = None,
+    ) -> None: ...  # pragma: no cover
+
+
+def safe_repr(obj: object) -> str:
     try:
         return repr(obj)
     except Exception:  # pylint: disable=broad-except
@@ -105,12 +124,12 @@ class AstroidManager:
         AstroidManager.brain["max_inferable_values"] = value
 
     @property
-    def register_transform(self):
+    def register_transform(self) -> _TransformRegistration:
         # This and unregister_transform below are exported for convenience
         return self._transform.register_transform
 
     @property
-    def unregister_transform(self):
+    def unregister_transform(self) -> _TransformRegistration:
         return self._transform.unregister_transform
 
     @property
@@ -243,12 +262,15 @@ class AstroidManager:
             return self.astroid_cache[modname]
         if modname == "__main__":
             return self._build_stub_module(modname)
+        old_cwd: str | None = None
         if context_file:
             old_cwd = os.getcwd()
             os.chdir(os.path.dirname(context_file))
         try:
             found_spec = self.file_from_module_name(modname, context_file)
             if found_spec.type == spec.ModuleType.PY_ZIPMODULE:
+                # The zip finder always locates the module in its archive
+                assert found_spec.location is not None
                 module = self.zip_import_data(found_spec.location)
                 if module is not None:
                     return module
@@ -291,13 +313,10 @@ class AstroidManager:
                     pass
             raise e
         finally:
-            if context_file:
+            if old_cwd is not None:
                 os.chdir(old_cwd)
 
     def zip_import_data(self, filepath: str) -> nodes.Module | None:
-        if zipimport is None:
-            return None
-
         builder = AstroidBuilder(self)
         for ext in ZIP_IMPORT_EXTS:
             try:
@@ -309,9 +328,11 @@ class AstroidManager:
                 zmodname = resource.replace(os.path.sep, ".")
                 if importer.is_package(resource):
                     zmodname = zmodname + ".__init__"
-                module = builder.string_build(
-                    importer.get_source(resource), zmodname, filepath
-                )
+                source = importer.get_source(resource)
+                if source is None:
+                    # Only compiled in the archive: nothing to build from
+                    continue
+                module = builder.string_build(source, zmodname, filepath)
                 return module
             except Exception:  # pylint: disable=broad-except
                 continue
@@ -490,7 +511,7 @@ class AstroidManager:
             _find_spec,
             _is_setuptools_namespace,
         ):
-            lru_cache.cache_clear()  # type: ignore[attr-defined]
+            lru_cache.cache_clear()
 
         for finder in spec._SPEC_FINDERS:
             finder.find_module.cache_clear()

@@ -43,7 +43,9 @@ class AstroidManagerBrain(TypedDict):
     optimize_ast: bool
     max_inferable_values: int
     extension_package_whitelist: set[str]
+    module_denylist: set[str]
     _transform: transforms.TransformVisitor
+    prefer_stubs: bool
 
 
 # pylint: disable=consider-alternative-union-syntax
