@@ -28,7 +28,7 @@ import os
 import types
 from collections.abc import Iterator
 from functools import lru_cache
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Generic, Literal, Self, TypeVar, cast
 
 import astroid
 from astroid import bases, nodes, util
@@ -39,10 +39,20 @@ from astroid.nodes import node_classes
 from astroid.typing import InferenceResult, SuccessfulInferenceResult
 
 if TYPE_CHECKING:
+    from astroid import objects
     from astroid.objects import Property
 
 IMPL_PREFIX = "attr_"
 LEN_OF_IMPL_PREFIX = len(IMPL_PREFIX)
+
+_InstanceT_co = TypeVar(
+    "_InstanceT_co", bound=SuccessfulInferenceResult, covariant=True
+)
+_FunctionT_co = TypeVar(
+    "_FunctionT_co",
+    bound="nodes.FunctionDef | nodes.Lambda | bases.UnboundMethod | bases.Generator",
+    covariant=True,
+)
 
 
 def _dunder_dict(instance, attributes):
@@ -68,17 +78,21 @@ def _dunder_dict(instance, attributes):
     return obj
 
 
-def _get_bound_node(model: ObjectModel) -> Any:
-    # TODO: Use isinstance instead of try ... except after _instance has typing
-    try:
-        return model._instance._proxied
-    except AttributeError:
-        return model._instance
+def _get_bound_node(
+    model: ObjectModel[SuccessfulInferenceResult],
+) -> SuccessfulInferenceResult:
+    # Proxies, but also some nodes such as Const or Super, expose the class they
+    # stand for as ``_proxied``: they have no common base class to check against.
+    instance = model._instance
+    bound: SuccessfulInferenceResult = getattr(instance, "_proxied", instance)
+    return bound
 
 
-class ObjectModel:
-    def __init__(self):
-        self._instance = None
+class ObjectModel(Generic[_InstanceT_co]):
+    """Special attributes of the nodes or proxies of type ``_InstanceT_co``."""
+
+    def __init__(self) -> None:
+        self._bound_instance: _InstanceT_co | None = None
 
     def __repr__(self):
         import pprint  # pylint: disable=import-outside-toplevel
@@ -104,11 +118,21 @@ class ObjectModel:
             "fields": (",\n" + " " * alignment).join(result),
         }
 
-    def __call__(self, instance):
-        self._instance = instance
+    @property
+    def _instance(self) -> _InstanceT_co:
+        """The node or proxy that ``__call__`` or ``__get__`` bound the model to."""
+        assert self._bound_instance is not None, "The model is not bound to a node"
+        return self._bound_instance
+
+    def __call__(self, instance: SuccessfulInferenceResult | None) -> Self:
+        # A model is bound to the instances of the classes that declare it as
+        # their ``special_attributes``: those are of type ``_InstanceT_co``.
+        self._bound_instance = cast("_InstanceT_co | None", instance)
         return self
 
-    def __get__(self, instance, cls=None):
+    def __get__(
+        self, instance: SuccessfulInferenceResult | None, cls: type | None = None
+    ) -> Self:
         # ObjectModel needs to be a descriptor so that just doing
         # `special_attributes = SomeObjectModel` should be enough in the body of a node.
         # But at the same time, node.special_attributes should return an object
@@ -118,7 +142,7 @@ class ObjectModel:
         # underlying data model and to the instance for which it got accessed.
         return self(instance)
 
-    def __contains__(self, name) -> bool:
+    def __contains__(self, name: str) -> bool:
         return name in self.attributes()
 
     @lru_cache  # noqa
@@ -126,14 +150,15 @@ class ObjectModel:
         """Get the attributes which are exported by this object model."""
         return [o[LEN_OF_IMPL_PREFIX:] for o in dir(self) if o.startswith(IMPL_PREFIX)]
 
-    def lookup(self, name):
+    def lookup(self, name: str) -> InferenceResult:
         """Look up the given *name* in the current model.
 
         It should return an AST or an interpreter object,
         but if the name is not found, then an AttributeInferenceError will be raised.
         """
         if name in self.attributes():
-            return getattr(self, IMPL_PREFIX + name)
+            attribute: InferenceResult = getattr(self, IMPL_PREFIX + name)
+            return attribute
         raise AttributeInferenceError(target=self._instance, attribute=name)
 
     @property
@@ -202,7 +227,7 @@ class ObjectModel:
     attr___subclasshook__ = attr___ne__
 
 
-class ModuleModel(ObjectModel):
+class ModuleModel(ObjectModel["nodes.Module"]):
     def _builtins(self):
         builtins_ast_module = AstroidManager().builtins_module
         return builtins_ast_module.special_attributes.lookup("__dict__")
@@ -279,7 +304,9 @@ class ModuleModel(ObjectModel):
         return node_classes.Unknown(parent=self._instance)
 
 
-class FunctionModel(ObjectModel):
+class BaseFunctionModel(ObjectModel[_FunctionT_co]):
+    """Special attributes shared by functions, methods and generators."""
+
     def _is_builtin_func(self) -> bool:
         func = self._instance
         return isinstance(func.parent, nodes.Module) and not func.root().pure_python
@@ -549,7 +576,11 @@ class FunctionModel(ObjectModel):
     attr___type_params__ = attr___call__
 
 
-class ClassModel(ObjectModel):
+class FunctionModel(BaseFunctionModel["nodes.FunctionDef | nodes.Lambda"]):
+    """Special attributes of functions and lambdas."""
+
+
+class ClassModel(ObjectModel["nodes.ClassDef"]):
     def __init__(self):
         # Add a context so that inferences called from an instance don't recurse endlessly
         self.context = InferenceContext()
@@ -663,7 +694,7 @@ class ClassModel(ObjectModel):
         return self._instance.instantiate_class()
 
 
-class SuperModel(ObjectModel):
+class SuperModel(ObjectModel["objects.Super"]):
     @property
     def attr___thisclass__(self):
         return self._instance.mro_pointer
@@ -681,7 +712,7 @@ class SuperModel(ObjectModel):
         return self._instance._proxied
 
 
-class UnboundMethodModel(FunctionModel):
+class UnboundMethodModel(BaseFunctionModel["bases.UnboundMethod"]):
     @property
     def attr___class__(self):
         # pylint: disable=import-outside-toplevel; circular import
@@ -702,7 +733,7 @@ class UnboundMethodModel(FunctionModel):
     attr_im_self = attr___self__
 
 
-class ContextManagerModel(ObjectModel):
+class ContextManagerModel(ObjectModel[_InstanceT_co]):
     """Model for context managers.
 
     Based on 3.3.9 of the Data Model documentation:
@@ -748,7 +779,7 @@ class ContextManagerModel(ObjectModel):
         return bases.BoundMethod(proxy=node, bound=_get_bound_node(self))
 
 
-class BoundMethodModel(FunctionModel):
+class BoundMethodModel(BaseFunctionModel["bases.BoundMethod"]):
     @property
     def attr___func__(self):
         # Proxy depth varies: an instance method accessed through an instance
@@ -764,13 +795,17 @@ class BoundMethodModel(FunctionModel):
         return self._instance.bound
 
 
-class GeneratorBaseModel(FunctionModel, ContextManagerModel):
+class GeneratorBaseModel(
+    BaseFunctionModel["bases.Generator"], ContextManagerModel["bases.Generator"]
+):
     def __init__(self, gen_module: nodes.Module):
         super().__init__()
         for name, values in gen_module.locals.items():
             method = values[0]
             if isinstance(method, nodes.FunctionDef):
-                method = bases.BoundMethod(method, _get_bound_node(self))
+                # The model is not bound to a generator yet: these methods
+                # have no bound node.
+                method = bases.BoundMethod(method, None)
 
             def patched(cls, meth=method):
                 return meth
@@ -801,7 +836,7 @@ class AsyncGeneratorModel(GeneratorBaseModel):
         super().__init__(AstroidManager().builtins_module["async_generator"])
 
 
-class InstanceModel(ObjectModel):
+class InstanceModel(ObjectModel["bases.Instance"]):
     @property
     def attr___class__(self):
         return self._instance._proxied
@@ -907,7 +942,7 @@ BUILTIN_EXCEPTIONS = {
 }
 
 
-class DictModel(ObjectModel):
+class DictModel(ObjectModel["objects.DictInstance"]):
     @property
     def attr___class__(self):
         return self._instance._proxied
@@ -964,7 +999,7 @@ class DictModel(ObjectModel):
         return self._generic_dict_attribute(values_obj, "values")
 
 
-class PropertyModel(ObjectModel):
+class PropertyModel(ObjectModel["Property"]):
     """Model for a builtin property."""
 
     def _init_function(self, name):
