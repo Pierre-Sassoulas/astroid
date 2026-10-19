@@ -62,7 +62,8 @@ _BadOpMessageT = typing.TypeVar("_BadOpMessageT", bound=util.BadOperationMessage
 
 # pylint: disable-next=consider-alternative-union-syntax
 AssignedStmtsPossibleNode = Union["List", "Tuple", "AssignName", "AssignAttr", None]
-AssignedStmtsCall = Callable[
+# The protocols assigned_stmts functions differ in what they yield.
+AssignedStmtsCall = Callable[  # type: ignore[explicit-any]
     [
         _NodesT,
         AssignedStmtsPossibleNode,
@@ -300,7 +301,9 @@ class BaseContainer(_base_nodes.ParentAssignNode, Instance, metaclass=abc.ABCMet
         self.elts = elts
 
     @classmethod
-    def from_elements(cls, elts: Iterable[Any]) -> Self:
+    def from_elements(  # type: ignore[explicit-any] # nodes or constant values
+        cls, elts: Iterable[Any]
+    ) -> Self:
         """Create a node of this type from the given list of elements.
 
         :param elts: The list of elements that the node should contain.
@@ -1813,7 +1816,8 @@ class Call(NodeNG):
         return context_lookup
 
 
-COMPARE_OPS: dict[str, Callable[[Any, Any], bool]] = {
+# The operands are literal values of any type.
+COMPARE_OPS: dict[str, Callable[[Any, Any], bool]] = {  # type: ignore[explicit-any]
     "==": operator.eq,
     "!=": operator.ne,
     "<": operator.lt,
@@ -1879,7 +1883,9 @@ class Compare(NodeNG):
 
     # TODO: move to util?
     @staticmethod
-    def _to_literal(node: SuccessfulInferenceResult) -> Any:
+    def _to_literal(  # type: ignore[explicit-any] # literal_eval returns Any
+        node: SuccessfulInferenceResult,
+    ) -> Any:
         # Can raise SyntaxError, ValueError, or TypeError from ast.literal_eval
         # Can raise AttributeError from node.as_string() as not all nodes have a visitor
         # Is this the stupidest idea or the simplest idea?
@@ -2063,7 +2069,7 @@ class Const(_base_nodes.NoChildrenNode, Instance):
 
     _other_fields = ("value", "kind")
 
-    def __init__(
+    def __init__(  # type: ignore[explicit-any] # a constant of any type
         self,
         value: Any,
         lineno: int | None = None,
