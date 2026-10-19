@@ -255,7 +255,7 @@ class ModuleModel(ObjectModel["nodes.Module"]):
         # A package always has a path.
         package_path = self._instance.path
         assert package_path is not None
-        path_objs: list[SuccessfulInferenceResult] = [
+        path_objs: list[InferenceResult] = [
             node_classes.Const(
                 value=(
                     path if not path.endswith("__init__.py") else os.path.dirname(path)
@@ -633,7 +633,7 @@ class ClassModel(ObjectModel["nodes.ClassDef"]):
 
     @property
     def attr___mro__(self) -> node_classes.Tuple:
-        mro = self._instance.mro()
+        mro: list[InferenceResult] = list(self._instance.mro())
         obj = node_classes.Tuple(parent=self._instance)
         obj.postinit(mro)
         return obj
@@ -663,14 +663,12 @@ class ClassModel(ObjectModel["nodes.ClassDef"]):
     def attr___bases__(self) -> node_classes.Tuple:
         obj = node_classes.Tuple(parent=self._instance)
         context = InferenceContext()
-        elts: list[SuccessfulInferenceResult] = list(
-            self._instance._inferred_bases(context)
-        )
+        elts: list[InferenceResult] = list(self._instance._inferred_bases(context))
         obj.postinit(elts=elts)
         return obj
 
     @property
-    def attr___class__(self) -> InferenceResult | None:
+    def attr___class__(self) -> InferenceResult:
         # pylint: disable=import-outside-toplevel; circular import
         from astroid import helpers
 
@@ -686,7 +684,7 @@ class ClassModel(ObjectModel["nodes.ClassDef"]):
 
         qname = self._instance.qname()
         root = self._instance.root()
-        classes: list[SuccessfulInferenceResult] = [
+        classes: list[InferenceResult] = [
             cls
             for cls in root.nodes_of_class(nodes.ClassDef)
             if cls != self._instance and cls.is_subtype_of(qname, context=self.context)
@@ -732,7 +730,7 @@ class SuperModel(ObjectModel["objects.Super"]):
         return self._instance.mro_pointer
 
     @property
-    def attr___self_class__(self) -> nodes.ClassDef:
+    def attr___self_class__(self) -> nodes.ClassDef | None:
         return self._instance._self_class
 
     @property
@@ -747,7 +745,7 @@ class SuperModel(ObjectModel["objects.Super"]):
 
 class UnboundMethodModel(BaseFunctionModel["bases.UnboundMethod"]):
     @property
-    def attr___class__(self) -> InferenceResult | None:
+    def attr___class__(self) -> InferenceResult:
         # pylint: disable=import-outside-toplevel; circular import
         from astroid import helpers
 
@@ -826,7 +824,7 @@ class BoundMethodModel(BaseFunctionModel["bases.BoundMethod"]):
         return proxied
 
     @property
-    def attr___self__(self) -> SuccessfulInferenceResult:
+    def attr___self__(self) -> SuccessfulInferenceResult | None:
         return self._instance.bound
 
 
@@ -1004,7 +1002,7 @@ class DictModel(ObjectModel["nodes.Dict"]):
     def attr_items(self) -> bases.BoundMethod:
         from astroid import objects  # pylint: disable=import-outside-toplevel
 
-        elems: list[SuccessfulInferenceResult] = []
+        elems: list[InferenceResult] = []
         obj = node_classes.List(parent=self._instance)
         for key, value in self._instance.items:
             elem = node_classes.Tuple(parent=obj)
