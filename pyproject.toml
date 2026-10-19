@@ -105,6 +105,7 @@ report.exclude_lines = [
 [tool.mypy]
 python_version = "3.11"
 files = [
+  "astroid/__init__.py",
   "astroid/__main__.py",
   "astroid/__pkginfo__.py",
   "astroid/_ast.py",
