@@ -11,7 +11,7 @@ from __future__ import annotations
 import collections
 import collections.abc
 from collections.abc import Iterable, Iterator
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any, ClassVar, Literal
 
 from astroid import decorators, nodes
 from astroid.context import (
@@ -139,7 +139,8 @@ class Proxy:
         else:
             self._proxied = proxied
 
-    def __getattr__(self, name: str) -> Any:
+    # Any attribute of the proxied node, so its type depends on the name
+    def __getattr__(self, name: str) -> Any:  # type: ignore[explicit-any]
         if name == "_proxied":
             return self.__class__._proxied
         if name in self.__dict__:
@@ -227,7 +228,8 @@ def _infer_method_result_truth(
                     inferred = next(value.infer(context=context))
                 except StopIteration as e:
                     raise InferenceError(context=context) from e
-                return inferred.bool_value()
+                truth: bool | UninferableBase = inferred.bool_value()
+                return truth
         except InferenceError:
             pass
     return Uninferable
@@ -238,9 +240,11 @@ class BaseInstance(Proxy):
     instances.
     """
 
-    _proxied: nodes.ClassDef
+    # Instances always proxy a class; Proxy._proxied is not reassigned through
+    # the base class.
+    _proxied: nodes.ClassDef  # pyright: ignore[reportIncompatibleVariableOverride]
 
-    special_attributes: objectmodel.ObjectModel
+    special_attributes: ClassVar[objectmodel.ObjectModel]
 
     def display_type(self) -> str:
         return "Instance of"
@@ -368,7 +372,7 @@ class Instance(BaseInstance):
         other: InferenceResult,
         context: InferenceContext,
         method: SuccessfulInferenceResult,
-    ) -> Generator[InferenceResult]:
+    ) -> collections.abc.Generator[InferenceResult]:
         return method.infer_call_result(self, context)
 
     def __repr__(self) -> str:
@@ -443,7 +447,10 @@ class Instance(BaseInstance):
 class UnboundMethod(Proxy):
     """A special node representing a method not bound to an instance."""
 
-    _proxied: nodes.FunctionDef | UnboundMethod
+    # Methods always proxy a function (possibly through another method)
+    _proxied: (  # pyright: ignore[reportIncompatibleVariableOverride]
+        nodes.FunctionDef | UnboundMethod
+    )
 
     special_attributes: (
         objectmodel.BoundMethodModel | objectmodel.UnboundMethodModel
@@ -460,7 +467,9 @@ class UnboundMethod(Proxy):
     def is_bound(self) -> bool:
         return False
 
-    def getattr(self, name: str, context: InferenceContext | None = None):
+    def getattr(
+        self, name: str, context: InferenceContext | None = None
+    ) -> list[InferenceResult]:
         if name in self.special_attributes:
             special_attr = self.special_attributes.lookup(name)
             if not isinstance(special_attr, nodes.Unknown):
@@ -716,7 +725,7 @@ class Generator(BaseInstance):
     # We defer initialization of special_attributes to the __init__ method since the constructor
     # of GeneratorModel requires the raw_building to be complete
     # TODO: This should probably be refactored.
-    special_attributes: objectmodel.GeneratorBaseModel
+    special_attributes: ClassVar[objectmodel.GeneratorBaseModel]
 
     def __init__(
         self,
@@ -727,8 +736,11 @@ class Generator(BaseInstance):
         self.parent = parent
         self._call_context = copy_context(generator_initial_context)
 
-        # See comment above: this is a deferred initialization.
-        Generator.special_attributes = objectmodel.GeneratorModel()
+        # See comment above: this is a deferred initialization. Generators
+        # always get a generator model, never set through BaseInstance.
+        Generator.special_attributes = (  # pyright: ignore[reportIncompatibleVariableOverride]
+            objectmodel.GeneratorModel()
+        )
 
     def infer_yield_types(self) -> Iterator[InferenceResult]:
         yield from self.parent.infer_yield_result(self._call_context)
@@ -755,8 +767,12 @@ class Generator(BaseInstance):
 class AsyncGenerator(Generator):
     """Special node representing an async generator."""
 
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+    def __init__(
+        self,
+        parent: nodes.FunctionDef,
+        generator_initial_context: InferenceContext | None = None,
+    ) -> None:
+        super().__init__(parent, generator_initial_context)
         AsyncGenerator.special_attributes = objectmodel.AsyncGeneratorModel()
 
     def pytype(self) -> Literal["builtins.async_generator"]:

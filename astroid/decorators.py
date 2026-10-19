@@ -10,19 +10,32 @@ import functools
 import inspect
 import sys
 import warnings
-from collections.abc import Callable, Generator
-from typing import ParamSpec, TypeVar
+from collections.abc import Callable, Generator, Iterable
+from typing import TYPE_CHECKING, ParamSpec, Protocol, TypeVar
 
 from astroid import util
 from astroid.context import InferenceContext
 from astroid.exceptions import InferenceError
-from astroid.typing import InferenceResult
+from astroid.typing import InferenceErrorInfo, InferenceResult
+
+if TYPE_CHECKING:
+    from astroid import nodes
 
 _R = TypeVar("_R")
 _P = ParamSpec("_P")
+_NodeT = TypeVar("_NodeT", bound="nodes.NodeNG")
+_NodeT_contra = TypeVar("_NodeT_contra", bound="nodes.NodeNG", contravariant=True)
 
 
-def path_wrapper(func):
+class _PathWrapped(Protocol[_NodeT_contra]):
+    def __call__(
+        self, node: _NodeT_contra, /, context: InferenceContext | None = None
+    ) -> Generator[InferenceResult]: ...  # pragma: no cover
+
+
+def path_wrapper(
+    func: Callable[[_NodeT, InferenceContext], Iterable[InferenceResult]],
+) -> _PathWrapped[_NodeT]:
     """Return the given infer function wrapped to handle the path.
 
     Used to stop inference if the node has already been looked
@@ -30,19 +43,25 @@ def path_wrapper(func):
     """
 
     @functools.wraps(func)
-    def wrapped(node, context: InferenceContext | None = None, _func=func) -> Generator:
+    def wrapped(
+        node: _NodeT,
+        context: InferenceContext | None = None,
+        _func: Callable[[_NodeT, InferenceContext], Iterable[InferenceResult]] = func,
+    ) -> Generator[InferenceResult]:
         """Wrapper function handling context."""
         if context is None:
             context = InferenceContext()
         if context.push(node):
             return
 
-        yielded = set()
+        yielded: set[InferenceResult] = set()
 
         for res in _func(node, context):
             # unproxy only true instance, not const, tuple, dict...
             if res.__class__.__name__ == "Instance":
-                ares = res._proxied
+                # bases.Instance, which bases (importing this module) cannot
+                # provide for an isinstance narrowing
+                ares = res._proxied  # type: ignore[union-attr]
             else:
                 ares = res
             if ares not in yielded:
@@ -53,7 +72,7 @@ def path_wrapper(func):
 
 
 def yes_if_nothing_inferred(
-    func: Callable[_P, Generator[InferenceResult]],
+    func: Callable[_P, Generator[InferenceResult, None, InferenceErrorInfo | None]],
 ) -> Callable[_P, Generator[InferenceResult]]:
     def inner(*args: _P.args, **kwargs: _P.kwargs) -> Generator[InferenceResult]:
         generator = func(*args, **kwargs)
@@ -71,7 +90,7 @@ def yes_if_nothing_inferred(
 
 
 def raise_if_nothing_inferred(
-    func: Callable[_P, Generator[InferenceResult]],
+    func: Callable[_P, Generator[InferenceResult, None, InferenceErrorInfo | None]],
 ) -> Callable[_P, Generator[InferenceResult]]:
     def inner(*args: _P.args, **kwargs: _P.kwargs) -> Generator[InferenceResult]:
         generator = func(*args, **kwargs)

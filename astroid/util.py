@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import re
 import warnings
+from collections.abc import Callable
 from typing import TYPE_CHECKING, Any, Final, Literal
 
 from astroid.exceptions import InferenceError
@@ -14,6 +15,7 @@ from astroid.exceptions import InferenceError
 if TYPE_CHECKING:
     from astroid import bases, nodes
     from astroid.context import InferenceContext
+    from astroid.nodes.as_string import AsStringVisitor
     from astroid.typing import InferenceResult
 
 
@@ -28,7 +30,10 @@ class UninferableBase:
 
     __str__ = __repr__
 
-    def __getattribute__(self, name: str) -> Any:
+    # Uninferable answers any attribute, most of them with itself. Typing the
+    # result as UninferableBase is stricter but flags many call sites that
+    # handle InferenceResult unions, so keep Any for now.
+    def __getattribute__(self, name: str) -> Any:  # type: ignore[explicit-any]
         if name == "next":
             raise AttributeError("next method should not be called")
         if name.startswith("__") and name.endswith("__"):
@@ -37,13 +42,13 @@ class UninferableBase:
             return object.__getattribute__(self, name)
         return self
 
-    def __call__(self, *args: Any, **kwargs: Any) -> UninferableBase:
+    def __call__(self, *args: object, **kwargs: object) -> UninferableBase:
         return self
 
     def __bool__(self) -> Literal[False]:
         return False
 
-    def accept(self, visitor):
+    def accept(self, visitor: AsStringVisitor) -> str:
         return visitor.visit_uninferable(self)
 
 
@@ -67,6 +72,7 @@ def format_spec_too_large(format_spec: str) -> bool:
     """
     # Every group in _FORMAT_SPEC_SIZE is optional, so match is never None.
     match = _FORMAT_SPEC_SIZE.match(format_spec)
+    assert match is not None
     return any(
         size is not None and int(size) > MAX_FORMATTED_SIZE
         for size in match.group("width", "precision")
@@ -84,18 +90,20 @@ class BadOperationMessage:
 class BadUnaryOperationMessage(BadOperationMessage):
     """Object which describes operational failures on UnaryOps."""
 
-    def __init__(self, operand, op, error):
+    def __init__(self, operand: InferenceResult, op: str, error: Exception) -> None:
         self.operand = operand
         self.op = op
         self.error = error
 
     @property
-    def _object_type_helper(self):
+    def _object_type_helper(
+        self,
+    ) -> Callable[[InferenceResult], InferenceResult | None]:
         from astroid import helpers  # pylint: disable=import-outside-toplevel
 
         return helpers.object_type
 
-    def _object_type(self, obj):
+    def _object_type(self, obj: InferenceResult) -> InferenceResult | None:
         objtype = self._object_type_helper(obj)
         if isinstance(objtype, UninferableBase):
             return None
@@ -103,13 +111,17 @@ class BadUnaryOperationMessage(BadOperationMessage):
         return objtype
 
     def __str__(self) -> str:
-        if hasattr(self.operand, "name"):
-            operand_type = self.operand.name
-        else:
+        # Nodes, proxies and Uninferable all expose ``name`` differently (proxies
+        # through ``__getattr__``), so it is looked up dynamically. No inferred
+        # object has a ``None`` name.
+        operand_type = getattr(self.operand, "name", None)
+        if operand_type is None:
             object_type = self._object_type(self.operand)
-            if hasattr(object_type, "name"):
-                operand_type = object_type.name
-            else:
+            # Only nameless operands get here (slices for instance), and their
+            # type is always known.
+            assert object_type is not None
+            operand_type = getattr(object_type, "name", None)
+            if operand_type is None:
                 # Just fallback to as_string
                 operand_type = object_type.as_string()
 
@@ -120,15 +132,23 @@ class BadUnaryOperationMessage(BadOperationMessage):
 class BadBinaryOperationMessage(BadOperationMessage):
     """Object which describes type errors for BinOps."""
 
-    def __init__(self, left_type, op, right_type):
+    def __init__(
+        self,
+        left_type: InferenceResult | None,
+        op: str,
+        right_type: InferenceResult | None,
+    ) -> None:
         self.left_type = left_type
         self.right_type = right_type
         self.op = op
 
     def __str__(self) -> str:
+        # The types are classes, proxies or Uninferable, which all have a name.
+        left_name = getattr(self.left_type, "name", None)
+        right_name = getattr(self.right_type, "name", None)
         return (
-            f"unsupported operand type(s) for {self.op}: {self.left_type.name!r} "
-            f"and {self.right_type.name!r}"
+            f"unsupported operand type(s) for {self.op}: {left_name!r} "
+            f"and {right_name!r}"
         )
 
 

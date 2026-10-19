@@ -6,8 +6,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Iterator
-from typing import TYPE_CHECKING, Any
+from collections.abc import Iterable, Mapping, Sequence
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from astroid import arguments, bases, nodes, objects
@@ -56,7 +56,10 @@ class AstroidError(Exception):
     arguments.
     """
 
-    def __init__(self, message: str = "", **kws: Any) -> None:
+    # Subclasses forward their extra ``kws`` to their parent, where a key may
+    # fill one of the parent's typed fields: mypy cannot check that
+    # pass-through, hence the ``arg-type`` ignores on those calls.
+    def __init__(self, message: str = "", **kws: object) -> None:
         super().__init__(message)
         self.message = message
         for key, value in kws.items():
@@ -90,7 +93,7 @@ class AstroidBuildingError(AstroidError):
         path: str | None = None,
         cls: type | None = None,
         class_repr: str | None = None,
-        **kws: Any,
+        **kws: object,
     ) -> None:
         self.modname = modname
         self.error = error
@@ -119,11 +122,11 @@ class TooManyLevelsError(AstroidImportError):
         "({level}) for module {name!r}",
         level: int | None = None,
         name: str | None = None,
-        **kws: Any,
+        **kws: object,
     ) -> None:
         self.level = level
         self.name = name
-        super().__init__(message, **kws)
+        super().__init__(message, **kws)  # type: ignore[arg-type]
 
 
 class AstroidSyntaxError(AstroidBuildingError):
@@ -154,7 +157,7 @@ class NoDefault(AstroidError):
         message: str = "{func!r} has no default for {name!r}.",
         func: nodes.FunctionDef | None = None,
         name: str | None = None,
-        **kws: Any,
+        **kws: object,
     ) -> None:
         self.func = func
         self.name = name
@@ -171,7 +174,7 @@ class ResolveError(AstroidError):
     """
 
     def __init__(
-        self, message: str = "", context: InferenceContext | None = None, **kws: Any
+        self, message: str = "", context: InferenceContext | None = None, **kws: object
     ) -> None:
         self.context = context
         super().__init__(message, **kws)
@@ -192,12 +195,12 @@ class MroError(ResolveError):
         mros: Iterable[Iterable[nodes.ClassDef]],
         cls: nodes.ClassDef,
         context: InferenceContext | None = None,
-        **kws: Any,
+        **kws: object,
     ) -> None:
         self.mros = mros
         self.cls = cls
         self.context = context
-        super().__init__(message, **kws)
+        super().__init__(message, **kws)  # type: ignore[arg-type]
 
     def __str__(self) -> str:
         mro_names = ", ".join(f"({', '.join(b.name for b in m)})" for m in self.mros)
@@ -220,9 +223,9 @@ class SuperError(ResolveError):
         context: InferenceContext object.
     """
 
-    def __init__(self, message: str, super_: objects.Super, **kws: Any) -> None:
+    def __init__(self, message: str, super_: objects.Super, **kws: object) -> None:
         self.super_ = super_
-        super().__init__(message, **kws)
+        super().__init__(message, **kws)  # type: ignore[arg-type]
 
     def __str__(self) -> str:
         return self.message.format(**vars(self.super_))
@@ -247,16 +250,16 @@ class InferenceError(ResolveError):  # pylint: disable=too-many-instance-attribu
         unknown: InferenceResult | None = None,
         assign_path: list[int] | None = None,
         caller: SuccessfulInferenceResult | None = None,
-        stmts: Iterator[InferenceResult] | None = None,
+        stmts: Iterable[InferenceResult] | None = None,
         frame: InferenceResult | None = None,
         call_site: arguments.CallSite | None = None,
         func: InferenceResult | None = None,
         arg: str | None = None,
-        positional_arguments: list | None = None,
-        unpacked_args: list | None = None,
-        keyword_arguments: dict | None = None,
-        unpacked_kwargs: dict | None = None,
-        **kws: Any,
+        positional_arguments: Sequence[InferenceResult] | None = None,
+        unpacked_args: Sequence[InferenceResult] | None = None,
+        keyword_arguments: Mapping[str, InferenceResult] | None = None,
+        unpacked_kwargs: Mapping[str | None, InferenceResult] | None = None,
+        **kws: object,
     ) -> None:
         self.node = node
         self.context = context
@@ -275,7 +278,7 @@ class InferenceError(ResolveError):  # pylint: disable=too-many-instance-attribu
         self.unpacked_args = unpacked_args
         self.keyword_arguments = keyword_arguments
         self.unpacked_kwargs = unpacked_kwargs
-        super().__init__(message, **kws)
+        super().__init__(message, **kws)  # type: ignore[arg-type]
 
 
 # Why does this inherit from InferenceError rather than ResolveError?
@@ -295,12 +298,12 @@ class NameInferenceError(InferenceError):
         name: str | None = None,
         scope: nodes.LocalsDictNodeNG | None = None,
         context: InferenceContext | None = None,
-        **kws: Any,
+        **kws: object,
     ) -> None:
         self.name = name
         self.scope = scope
         self.context = context
-        super().__init__(message, **kws)
+        super().__init__(message, **kws)  # type: ignore[arg-type]
 
 
 class AttributeInferenceError(ResolveError):
@@ -318,10 +321,10 @@ class AttributeInferenceError(ResolveError):
         attribute: str = "",
         target: nodes.NodeNG | bases.BaseInstance | None = None,
         context: InferenceContext | None = None,
-        mros: list[nodes.ClassDef] | None = None,
-        super_: nodes.ClassDef | None = None,
+        mros: Iterable[Iterable[nodes.ClassDef]] | None = None,
+        super_: objects.Super | None = None,
         cls: nodes.ClassDef | None = None,
-        **kws: Any,
+        **kws: object,
     ) -> None:
         self.attribute = attribute
         self.target = target
@@ -329,7 +332,7 @@ class AttributeInferenceError(ResolveError):
         self.mros = mros
         self.super_ = super_
         self.cls = cls
-        super().__init__(message, **kws)
+        super().__init__(message, **kws)  # type: ignore[arg-type]
 
 
 class UseInferenceDefault(Exception):
@@ -353,7 +356,7 @@ class AstroidIndexError(AstroidError):
         node: nodes.NodeNG | bases.Instance | None = None,
         index: nodes.Subscript | None = None,
         context: InferenceContext | None = None,
-        **kws: Any,
+        **kws: object,
     ) -> None:
         self.node = node
         self.index = index
@@ -370,7 +373,7 @@ class AstroidTypeError(AstroidError):
         node: nodes.NodeNG | bases.Instance | None = None,
         index: nodes.Subscript | None = None,
         context: InferenceContext | None = None,
-        **kws: Any,
+        **kws: object,
     ) -> None:
         self.node = node
         self.index = index

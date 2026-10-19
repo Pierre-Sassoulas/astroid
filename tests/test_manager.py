@@ -3,6 +3,8 @@
 # Copyright (c) https://github.com/pylint-dev/astroid/blob/main/CONTRIBUTORS.txt
 
 import importlib.machinery
+import importlib.util
+import marshal
 import os
 import re
 import sys
@@ -11,6 +13,7 @@ import time
 import types
 import unittest
 import warnings
+import zipfile
 from collections.abc import Iterator
 from contextlib import contextmanager
 from unittest import mock
@@ -493,6 +496,20 @@ class AstroidManagerTest(resources.SysPathSetup, unittest.TestCase):
             filepath = resources.find("data/MyPyPa-0.1.0-py2.5.zip/mypypa")
             ast = self.manager.zip_import_data(filepath)
             self.assertEqual(ast.name, "mypypa")
+
+    def test_zip_import_data_without_source(self) -> None:
+        """A module only compiled in its archive has no source to build from."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            archive_path = os.path.join(tmp_dir, "compiled.zip")
+            with zipfile.ZipFile(archive_path, "w") as archive:
+                archive.writestr(
+                    "apple.pyc",
+                    importlib.util.MAGIC_NUMBER
+                    + bytes(12)
+                    + marshal.dumps(compile("", "apple.py", "exec")),
+                )
+            filepath = os.path.join(archive_path, "apple")
+            self.assertIsNone(self.manager.zip_import_data(filepath))
 
     def test_zip_import_data_without_zipimport(self) -> None:
         """Check if zip_import_data return None without zipimport."""

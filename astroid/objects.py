@@ -13,9 +13,9 @@ leads to an inferred FrozenSet:
 
 from __future__ import annotations
 
-from collections.abc import Generator, Iterator
+from collections.abc import Generator, Iterable, Iterator, Mapping
 from functools import cached_property
-from typing import Literal, NoReturn, Self
+from typing import TYPE_CHECKING, Literal, NoReturn, Self
 
 from astroid import bases, util
 from astroid.context import InferenceContext
@@ -28,7 +28,11 @@ from astroid.exceptions import (
 from astroid.interpreter import objectmodel
 from astroid.manager import AstroidManager
 from astroid.nodes import node_classes, scoped_nodes
+from astroid.nodes.node_ng import NodeNG
 from astroid.typing import InferenceResult, SuccessfulInferenceResult
+
+if TYPE_CHECKING:
+    from astroid.arguments import CallSite
 
 
 class FrozenSet(node_classes.BaseContainer):
@@ -37,13 +41,16 @@ class FrozenSet(node_classes.BaseContainer):
     def pytype(self) -> Literal["builtins.frozenset"]:
         return "builtins.frozenset"
 
-    def _infer(self, context: InferenceContext | None = None):
+    def _infer(self, context: InferenceContext | None = None) -> Generator[Self]:
         yield self
 
+    # A cached_property can be set like the attribute it overrides
     @cached_property
-    def _proxied(self):
+    def _proxied(self) -> scoped_nodes.ClassDef:  # type: ignore[override]
         ast_builtins = AstroidManager().builtins_module
-        return ast_builtins.getattr("frozenset")[0]
+        frozenset_class = ast_builtins.getattr("frozenset")[0]
+        assert isinstance(frozenset_class, scoped_nodes.ClassDef)
+        return frozenset_class
 
 
 class Super(node_classes.NodeNG):
@@ -82,10 +89,10 @@ class Super(node_classes.NodeNG):
             end_col_offset=scope.end_col_offset,
         )
 
-    def _infer(self, context: InferenceContext | None = None):
+    def _infer(self, context: InferenceContext | None = None) -> Generator[Self]:
         yield self
 
-    def super_mro(self):
+    def super_mro(self) -> list[scoped_nodes.ClassDef]:
         """Get the MRO which will be used to lookup attributes in this super."""
         if not isinstance(self.mro_pointer, scoped_nodes.ClassDef):
             raise SuperError(
@@ -94,6 +101,7 @@ class Super(node_classes.NodeNG):
                 super_=self,
             )
 
+        mro_type: object
         if isinstance(self.type, scoped_nodes.ClassDef):
             # `super(type, type)`, most likely in a class method.
             self._class_based = True
@@ -119,9 +127,11 @@ class Super(node_classes.NodeNG):
         return mro[index + 1 :]
 
     @cached_property
-    def _proxied(self):
+    def _proxied(self) -> scoped_nodes.ClassDef:
         ast_builtins = AstroidManager().builtins_module
-        return ast_builtins.getattr("super")[0]
+        super_class = ast_builtins.getattr("super")[0]
+        assert isinstance(super_class, scoped_nodes.ClassDef)
+        return super_class
 
     def pytype(self) -> Literal["builtins.super"]:
         return "builtins.super"
@@ -130,7 +140,7 @@ class Super(node_classes.NodeNG):
         return "Super of"
 
     @property
-    def name(self):
+    def name(self) -> str:
         """Get the name of the MRO pointer."""
         return self.mro_pointer.name
 
@@ -224,7 +234,9 @@ class Super(node_classes.NodeNG):
         if not found:
             raise AttributeInferenceError(target=self, attribute=name, context=context)
 
-    def getattr(self, name, context: InferenceContext | None = None):
+    def getattr(
+        self, name: str, context: InferenceContext | None = None
+    ) -> list[InferenceResult]:
         return list(self.igetattr(name, context=context))
 
 
@@ -237,7 +249,7 @@ class ExceptionInstance(bases.Instance):
     """
 
     @cached_property
-    def special_attributes(self):
+    def special_attributes(self) -> objectmodel.ObjectModel:
         qname = self.qname()
         instance = objectmodel.BUILTIN_EXCEPTIONS.get(
             qname, objectmodel.ExceptionInstanceModel
@@ -258,18 +270,18 @@ class DictInstance(bases.Instance):
 # Custom objects tailored for dictionary views
 # returned by dict.items(), dict.keys() and dict.values().
 class DictItems(bases.Proxy):
-    __str__ = node_classes.NodeNG.__str__
-    __repr__ = node_classes.NodeNG.__repr__
+    __str__ = NodeNG.__str__
+    __repr__ = NodeNG.__repr__
 
 
 class DictKeys(bases.Proxy):
-    __str__ = node_classes.NodeNG.__str__
-    __repr__ = node_classes.NodeNG.__repr__
+    __str__ = NodeNG.__str__
+    __repr__ = NodeNG.__repr__
 
 
 class DictValues(bases.Proxy):
-    __str__ = node_classes.NodeNG.__str__
-    __repr__ = node_classes.NodeNG.__repr__
+    __str__ = NodeNG.__str__
+    __repr__ = NodeNG.__repr__
 
 
 class PartialFunction(scoped_nodes.FunctionDef):
@@ -277,17 +289,17 @@ class PartialFunction(scoped_nodes.FunctionDef):
 
     def __init__(
         self,
-        call=None,
-        name=None,
-        lineno=None,
-        col_offset=None,
-        parent=None,
+        call: CallSite | None = None,
+        name: str | None = None,
+        lineno: int | None = None,
+        col_offset: int | None = None,
+        parent: NodeNG | None = None,
         *,
-        end_lineno=None,
-        end_col_offset=None,
-        filled_args=None,
-        filled_keywords=None,
-    ):
+        end_lineno: int | None = None,
+        end_col_offset: int | None = None,
+        filled_args: Iterable[SuccessfulInferenceResult] | None = None,
+        filled_keywords: Mapping[str, SuccessfulInferenceResult] | None = None,
+    ) -> None:
         super().__init__(
             name,
             lineno=lineno,
@@ -343,7 +355,7 @@ class PartialFunction(scoped_nodes.FunctionDef):
 
 # TODO: Hack to solve the circular import problem between node_classes and objects
 # This is not needed in 2.0, which has a cleaner design overall
-node_classes.Dict.__bases__ = (node_classes.NodeNG, DictInstance)
+node_classes.Dict.__bases__ = (NodeNG, DictInstance)
 
 
 class Property(scoped_nodes.FunctionDef):

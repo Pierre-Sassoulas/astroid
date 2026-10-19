@@ -8,6 +8,7 @@ from collections.abc import Callable, Generator
 from typing import (
     TYPE_CHECKING,
     Generic,
+    NotRequired,
     Protocol,
     TypedDict,
     TypeVar,
@@ -29,6 +30,8 @@ class InferenceErrorInfo(TypedDict):
 
     node: nodes.NodeNG
     context: InferenceContext | None
+    unknown: NotRequired[InferenceResult | None]
+    assign_path: NotRequired[list[int] | None]
 
 
 class AstroidManagerBrain(TypedDict):
@@ -43,7 +46,9 @@ class AstroidManagerBrain(TypedDict):
     optimize_ast: bool
     max_inferable_values: int
     extension_package_whitelist: set[str]
+    module_denylist: set[str]
     _transform: transforms.TransformVisitor
+    prefer_stubs: bool
 
 
 # pylint: disable=consider-alternative-union-syntax

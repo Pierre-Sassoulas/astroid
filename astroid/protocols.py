@@ -11,7 +11,7 @@ from __future__ import annotations
 import collections
 import itertools
 import operator as operator_mod
-from collections.abc import Callable, Generator, Iterator, Sequence
+from collections.abc import Callable, Generator, Iterable, Iterator, Sequence
 from typing import TYPE_CHECKING, Any, TypeVar
 
 from astroid import bases, decorators, nodes, util
@@ -28,6 +28,7 @@ from astroid.exceptions import (
 from astroid.nodes import node_classes
 from astroid.typing import (
     ConstFactoryResult,
+    InferenceErrorInfo,
     InferenceResult,
     SuccessfulInferenceResult,
 )
@@ -37,7 +38,8 @@ if TYPE_CHECKING:
 
 _CONTEXTLIB_MGR = "contextlib.contextmanager"
 
-_UNARY_OPERATORS: dict[str, Callable[[Any], Any]] = {
+# The operators accept whatever their operand supports
+_UNARY_OPERATORS: dict[str, Callable[[Any], Any]] = {  # type: ignore[explicit-any]
     "+": operator_mod.pos,
     "-": operator_mod.neg,
     "~": operator_mod.invert,
@@ -45,7 +47,7 @@ _UNARY_OPERATORS: dict[str, Callable[[Any], Any]] = {
 }
 
 
-def _infer_unary_op(obj: Any, op: str) -> ConstFactoryResult:
+def _infer_unary_op(obj: object, op: str) -> ConstFactoryResult:
     """Perform unary operation on `obj`, unless it is `NotImplemented`.
 
     Can raise TypeError if operation is unsupported.
@@ -58,23 +60,23 @@ def _infer_unary_op(obj: Any, op: str) -> ConstFactoryResult:
     return nodes.const_factory(value)
 
 
-def tuple_infer_unary_op(self, op):
+def tuple_infer_unary_op(self: nodes.Tuple, op: str) -> ConstFactoryResult:
     return _infer_unary_op(tuple(self.elts), op)
 
 
-def list_infer_unary_op(self, op):
+def list_infer_unary_op(self: nodes.List, op: str) -> ConstFactoryResult:
     return _infer_unary_op(self.elts, op)
 
 
-def set_infer_unary_op(self, op):
+def set_infer_unary_op(self: nodes.Set, op: str) -> ConstFactoryResult:
     return _infer_unary_op(set(self.elts), op)
 
 
-def const_infer_unary_op(self, op):
+def const_infer_unary_op(self: nodes.Const, op: str) -> ConstFactoryResult:
     return _infer_unary_op(self.value, op)
 
 
-def dict_infer_unary_op(self, op):
+def dict_infer_unary_op(self: nodes.Dict, op: str) -> ConstFactoryResult:
     return _infer_unary_op(dict(self.items), op)
 
 
@@ -356,7 +358,11 @@ to any intermediary inference necessary.
 """
 
 
-def _resolve_looppart(parts, assign_path, context):
+def _resolve_looppart(
+    parts: Iterable[InferenceResult],
+    assign_path: list[int],
+    context: InferenceContext | None,
+) -> Iterator[InferenceResult]:
     """Recursive function to resolve multiple assignments on loops."""
     assign_path = assign_path[:]
     index = assign_path.pop(0)
@@ -403,7 +409,7 @@ def for_assigned_stmts(
     node: node_classes.AssignedStmtsPossibleNode = None,
     context: InferenceContext | None = None,
     assign_path: list[int] | None = None,
-) -> Any:
+) -> Generator[InferenceResult, None, InferenceErrorInfo]:
     if isinstance(self, nodes.AsyncFor) or getattr(self, "is_async", False):
         # Skip inferring of async code for now
         return {
@@ -431,7 +437,7 @@ def sequence_assigned_stmts(
     node: node_classes.AssignedStmtsPossibleNode = None,
     context: InferenceContext | None = None,
     assign_path: list[int] | None = None,
-) -> Any:
+) -> Iterator[InferenceResult]:
     if assign_path is None:
         assign_path = []
     try:
@@ -455,7 +461,7 @@ def assend_assigned_stmts(
     node: node_classes.AssignedStmtsPossibleNode = None,
     context: InferenceContext | None = None,
     assign_path: list[int] | None = None,
-) -> Any:
+) -> Iterator[InferenceResult]:
     return self.parent.assigned_stmts(node=self, context=context)
 
 
@@ -536,7 +542,7 @@ def arguments_assigned_stmts(
     node: node_classes.AssignedStmtsPossibleNode = None,
     context: InferenceContext | None = None,
     assign_path: list[int] | None = None,
-) -> Any:
+) -> Iterator[InferenceResult]:
     from astroid import arguments  # pylint: disable=import-outside-toplevel
 
     try:
@@ -568,7 +574,7 @@ def assign_assigned_stmts(
     node: node_classes.AssignedStmtsPossibleNode = None,
     context: InferenceContext | None = None,
     assign_path: list[int] | None = None,
-) -> Any:
+) -> Generator[InferenceResult, None, InferenceErrorInfo | None]:
     if (
         not assign_path
         and isinstance(self, nodes.Assign)
@@ -597,7 +603,7 @@ def assign_annassigned_stmts(
     node: node_classes.AssignedStmtsPossibleNode = None,
     context: InferenceContext | None = None,
     assign_path: list[int] | None = None,
-) -> Any:
+) -> Generator[InferenceResult]:
     if (
         not assign_path
         and self.annotation is not None
@@ -675,7 +681,7 @@ def infer_instance_from_annotation(
 ) -> Iterator[InferenceResult]:
     """Infer an instance corresponding to the type annotation represented by node."""
     node = _unwrap_typing_wrapper(node)
-    klass = None
+    klass: InferenceResult | None = None
     if isinstance(node, nodes.Const) and isinstance(node.value, str):
         klass = _resolve_forward_ref(node)
         if klass is None:
@@ -707,7 +713,11 @@ def infer_instance_from_annotation(
         yield klass.instantiate_class()
 
 
-def _resolve_assignment_parts(parts, assign_path, context):
+def _resolve_assignment_parts(
+    parts: Iterable[InferenceResult],
+    assign_path: list[int],
+    context: InferenceContext | None,
+) -> Iterator[InferenceResult]:
     """Recursive function to resolve multiple assignments."""
     assign_path = assign_path[:]
     index = assign_path.pop(0)
@@ -753,10 +763,10 @@ def excepthandler_assigned_stmts(
     node: node_classes.AssignedStmtsPossibleNode = None,
     context: InferenceContext | None = None,
     assign_path: list[int] | None = None,
-) -> Any:
+) -> Generator[InferenceResult, None, InferenceErrorInfo]:
     from astroid import objects  # pylint: disable=import-outside-toplevel
 
-    def _generate_assigned():
+    def _generate_assigned() -> Iterator[InferenceResult]:
         for assigned in node_classes.unpack_infer(self.type):
             if isinstance(assigned, nodes.ClassDef):
                 assigned = objects.ExceptionInstance(assigned)
@@ -771,6 +781,7 @@ def excepthandler_assigned_stmts(
 from builtins import ExceptionGroup
 ExceptionGroup
 """)))
+        assert isinstance(eg, nodes.ClassDef)
         assigned = objects.ExceptionInstance(eg)
         assigned.instance_attrs["exceptions"] = [
             nodes.Tuple.from_elements(_generate_assigned())
@@ -786,7 +797,9 @@ ExceptionGroup
     }
 
 
-def _infer_context_manager(self, mgr, context):
+def _infer_context_manager(
+    self: nodes.With, mgr: nodes.NodeNG, context: InferenceContext | None
+) -> Iterator[InferenceResult]:
     try:
         inferred = next(mgr.infer(context=context))
     except StopIteration as e:
@@ -830,7 +843,7 @@ def with_assigned_stmts(
     node: node_classes.AssignedStmtsPossibleNode = None,
     context: InferenceContext | None = None,
     assign_path: list[int] | None = None,
-) -> Any:
+) -> Generator[InferenceResult, None, InferenceErrorInfo | None]:
     """Infer names and other nodes from a *with* statement.
 
     This enables only inference for name binding in a *with* statement.
@@ -910,7 +923,7 @@ def named_expr_assigned_stmts(
     node: node_classes.AssignedStmtsPossibleNode,
     context: InferenceContext | None = None,
     assign_path: list[int] | None = None,
-) -> Any:
+) -> Generator[InferenceResult]:
     """Infer names and other nodes from an assignment expression."""
     if self.target == node:
         yield from self.value.infer(context=context)
@@ -929,7 +942,7 @@ def starred_assigned_stmts(  # noqa: C901
     node: node_classes.AssignedStmtsPossibleNode = None,
     context: InferenceContext | None = None,
     assign_path: list[int] | None = None,
-) -> Any:
+) -> Generator[InferenceResult]:
     """
     Arguments:
         self: nodes.Starred
@@ -994,7 +1007,10 @@ def starred_assigned_stmts(  # noqa: C901
             return
 
         try:
-            elts = collections.deque(rhs.itered())  # type: ignore[union-attr]
+            # rhs has an itered method (hasattr above)
+            elts = collections.deque(
+                rhs.itered()  # pyright: ignore[reportAttributeAccessIssue]
+            )
         except TypeError:
             yield util.Uninferable
             return
@@ -1043,7 +1059,10 @@ def starred_assigned_stmts(  # noqa: C901
             yield util.Uninferable
             return
         try:
-            itered = inferred_iterable.itered()  # type: ignore[union-attr]
+            # inferred_iterable has an itered method (hasattr above)
+            itered = (
+                inferred_iterable.itered()  # pyright: ignore[reportAttributeAccessIssue]
+            )
         except TypeError:
             yield util.Uninferable
             return
@@ -1095,7 +1114,7 @@ def starred_assigned_stmts(  # noqa: C901
                 if not hasattr(element, "itered"):
                     break
                 if index + 1 is len(lookups):
-                    cur_lookup: slice | int = last_lookup
+                    cur_lookup: slice[int, int | None, None] | int = last_lookup
                 else:
                     # Grab just the index, not the whole length
                     cur_lookup = lookup[0]
@@ -1131,11 +1150,8 @@ def match_mapping_assigned_stmts(
     context: InferenceContext | None = None,
     assign_path: None = None,
 ) -> Generator[nodes.NodeNG]:
-    """Return empty generator (return -> raises StopIteration) so inferred value
-    is Uninferable.
-    """
-    return
-    yield
+    """Return an empty generator so the inferred value is Uninferable."""
+    yield from ()
 
 
 @decorators.yes_if_nothing_inferred
@@ -1145,11 +1161,8 @@ def match_star_assigned_stmts(
     context: InferenceContext | None = None,
     assign_path: None = None,
 ) -> Generator[nodes.NodeNG]:
-    """Return empty generator (return -> raises StopIteration) so inferred value
-    is Uninferable.
-    """
-    return
-    yield
+    """Return an empty generator so the inferred value is Uninferable."""
+    yield from ()
 
 
 @decorators.yes_if_nothing_inferred

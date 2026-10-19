@@ -12,26 +12,17 @@ import importlib.util
 import os
 import pathlib
 import sys
-import types
 import warnings
 import zipimport
 from collections.abc import Iterable, Iterator, Sequence
 from functools import lru_cache
 from pathlib import Path
-from typing import Literal, NamedTuple, Protocol
+from typing import TYPE_CHECKING, Literal, NamedTuple
 
 from . import util
 
-
-# The MetaPathFinder protocol comes from typeshed, which says:
-# Intentionally omits one deprecated and one optional method of `importlib.abc.MetaPathFinder`
-class _MetaPathFinder(Protocol):
-    def find_spec(
-        self,
-        fullname: str,
-        path: Sequence[str] | None,
-        target: types.ModuleType | None = ...,
-    ) -> importlib.machinery.ModuleSpec | None: ...  # pragma: no cover
+if TYPE_CHECKING:
+    from _typeshed.importlib import MetaPathFinderProtocol
 
 
 class ModuleType(enum.Enum):
@@ -391,7 +382,7 @@ def _find_spec_with_path(
     module_parts: tuple[str, ...],
     processed: tuple[str, ...],
     submodule_path: tuple[str, ...] | None,
-) -> tuple[Finder | _MetaPathFinder, ModuleSpec]:
+) -> tuple[Finder | MetaPathFinderProtocol, ModuleSpec]:
     for finder in _SPEC_FINDERS:
         finder_instance = finder(search_path)
         mod_spec = finder.find_module(modname, module_parts, processed, submodule_path)
@@ -470,6 +461,7 @@ def _find_spec(
 
     search_paths = None
     processed: list[str] = []
+    spec: ModuleSpec | None = None
 
     while modpath:
         modname = modpath.pop(0)
@@ -494,4 +486,6 @@ def _find_spec(
         if spec.type == ModuleType.PKG_DIRECTORY:
             spec = spec._replace(submodule_search_locations=search_paths)
 
+    if spec is None:
+        raise ImportError("No module named ''")
     return spec

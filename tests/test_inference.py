@@ -24,6 +24,7 @@ from astroid import (
     manager,
     nodes,
     objects,
+    raw_building,
     test_utils,
     util,
 )
@@ -2896,6 +2897,13 @@ class InferenceTest(resources.SysPathSetup, unittest.TestCase):
         self.assertEqual(len(errors), 1)
         self.assertEqual(str(errors[0]), "bad operand type for unary ~: slice")
 
+    def test_unary_type_error_for_type_without_name(self) -> None:
+        """The message falls back to the source of a type that has no name."""
+        operand = extract_node("basket[1:2]").slice
+        with patch("astroid.helpers.object_type", return_value=operand):
+            message = util.BadUnaryOperationMessage(operand, "~", TypeError())
+            self.assertEqual(str(message), "bad operand type for unary ~: 1:2")
+
     def test_unary_type_errors_partially_uninferable(self) -> None:
         def patched_infer_unary_op(context):
             return iter([util.BadUnaryOperationMessage(None, None, "msg"), Uninferable])
@@ -5386,6 +5394,15 @@ class CallSiteTest(unittest.TestCase):
         self.assertEqual(
             print_call_site._unpack_keywords(keywords), {None: Uninferable}
         )
+
+    def test_infer_argument_without_signature(self) -> None:
+        """A function built without a signature cannot map its arguments."""
+        module = nodes.Module("basket")
+        func = raw_building.build_function("apple", module)
+        assert func.args.args is None
+        call_site = self._call_site_from_call(extract_node("apple(1)"))
+        with pytest.raises(InferenceError, match="its signature is unknown"):
+            call_site.infer_argument(func, "seed", InferenceContext())
 
 
 class ObjectDunderNewTest(unittest.TestCase):

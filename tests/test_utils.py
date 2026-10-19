@@ -4,7 +4,9 @@
 
 import unittest
 
-from astroid import Uninferable, builder, extract_node, nodes
+import pytest
+
+from astroid import Uninferable, builder, extract_node, nodes, test_utils
 from astroid.exceptions import InferenceError
 
 
@@ -166,3 +168,12 @@ class InferenceUtil(unittest.TestCase):
         inferred = next(node.infer())
         with self.assertRaises(InferenceError):
             list(nodes.unpack_infer(inferred))
+
+
+def test_require_version_skips_other_versions() -> None:
+    @test_utils.require_version(maxver="3.0")
+    def apple() -> None:
+        pass
+
+    with pytest.raises(pytest.skip.Exception):
+        apple()
