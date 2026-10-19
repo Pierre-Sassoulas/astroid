@@ -13,15 +13,15 @@ from astroid.context import InferenceContext
 from astroid.exceptions import UseInferenceDefault
 from astroid.inference_tip import inference_tip
 from astroid.manager import AstroidManager
-from astroid.typing import SuccessfulInferenceResult
+from astroid.typing import InferenceResult
 from astroid.util import UninferableBase, safe_infer
 
 ACCEPTED_ITERABLES_FOR_SAMPLE = (nodes.List, nodes.Set, nodes.Tuple)
 
 
 def _clone_node_with_lineno(
-    node: SuccessfulInferenceResult, parent: nodes.List, lineno: int | None
-) -> SuccessfulInferenceResult:
+    node: InferenceResult, parent: nodes.List, lineno: int | None
+) -> InferenceResult:
     if isinstance(node, nodes.EvaluatedObject):
         node = node.original
     if not isinstance(node, nodes.NodeNG):

@@ -207,7 +207,10 @@ class CallSite:
                 )
 
         positional = self.positional_arguments[: len(funcnode.args.args)]
-        vararg = self.positional_arguments[len(funcnode.args.args) :]
+        # The elements of the *args tuple, which may hold any inference result
+        vararg: list[InferenceResult] = list(
+            self.positional_arguments[len(funcnode.args.args) :]
+        )
 
         # preserving previous behavior, when vararg and kwarg were not included in find_argname results
         if name in [funcnode.args.vararg, funcnode.args.kwarg]:
