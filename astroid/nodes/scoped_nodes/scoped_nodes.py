@@ -15,7 +15,7 @@ import itertools
 import os
 from collections.abc import Generator, Iterable, Iterator, Sequence
 from functools import cached_property, lru_cache
-from typing import TYPE_CHECKING, ClassVar, Literal, NoReturn, Self, TypeGuard
+from typing import TYPE_CHECKING, ClassVar, Literal, NoReturn, Protocol, Self, TypeGuard
 
 from astroid import bases, protocols, util
 from astroid.context import (
@@ -61,6 +61,28 @@ EXCEPTION_BASE_CLASSES = frozenset({"Exception", "BaseException"})
 BUILTIN_DESCRIPTORS = frozenset(
     {"classmethod", "staticmethod", "builtins.classmethod", "builtins.staticmethod"}
 )
+
+
+class _AttributeLookup(Protocol):
+    """What can look up its attributes, as checked by ``hasattr(node, "getattr")``."""
+
+    def getattr(
+        self, name: str, context: InferenceContext | None = None
+    ) -> list[InferenceResult]: ...  # pragma: no cover
+
+
+class _Iterable(Protocol):
+    """What can list its elements, as checked by ``hasattr(node, "itered")``."""
+
+    def itered(self) -> Sequence[InferenceResult]: ...  # pragma: no cover
+
+
+def _has_getattr(node: object) -> TypeGuard[_AttributeLookup]:
+    return hasattr(node, "getattr")
+
+
+def _has_itered(node: object) -> TypeGuard[_Iterable]:
+    return hasattr(node, "itered")
 
 
 def _c3_merge(
@@ -265,7 +287,7 @@ class Module(LocalsDictNodeNG):
         self.locals = self.globals = {}
         """A map of the name of a local variable to the node defining the local."""
 
-        self.body: list[node_classes.NodeNG] = []
+        self.body: list[NodeNG] = []
         """The contents of the module."""
 
         self.future_imports: set[str] = set()
@@ -308,7 +330,7 @@ class Module(LocalsDictNodeNG):
 
     def scope_lookup(
         self, node: LookupMixIn, name: str, offset: int = 0
-    ) -> tuple[LocalsDictNodeNG, list[NodeNG]]:
+    ) -> tuple[LocalsDictNodeNG, Sequence[InferenceResult]]:
         """Lookup where the given variable is assigned.
 
         :param node: The node to look for assignments up to.
@@ -998,7 +1020,7 @@ class Lambda(_base_nodes.FilterStmtsBaseNode, LocalsDictNodeNG):
 
     def scope_lookup(
         self, node: LookupMixIn, name: str, offset: int = 0
-    ) -> tuple[LocalsDictNodeNG, list[NodeNG]]:
+    ) -> tuple[LocalsDictNodeNG, Sequence[InferenceResult]]:
         """Lookup where the given names is assigned.
 
         :param node: The node to look for assignments up to.
@@ -1119,12 +1141,12 @@ class FunctionDef(
 
     :type: NodeNG or None
     """
-    type_comment_args = None
+    type_comment_args: list[NodeNG] | None = None
     """
     If present, this will contain the type annotation for arguments
     passed by a type comment
     """
-    type_comment_returns = None
+    type_comment_returns: NodeNG | None = None
     """If present, this will contain the return type annotation, passed by a type comment"""
     # attributes below are set by the builder module or by raw factories
     _other_fields = ("name", "position")
@@ -1183,9 +1205,9 @@ class FunctionDef(
         args: Arguments,
         body: list[NodeNG],
         decorators: node_classes.Decorators | None = None,
-        returns=None,
-        type_comment_returns=None,
-        type_comment_args=None,
+        returns: NodeNG | None = None,
+        type_comment_returns: NodeNG | None = None,
+        type_comment_args: list[NodeNG] | None = None,
         *,
         position: Position | None = None,
         doc_node: Const | None = None,
@@ -1378,8 +1400,6 @@ class FunctionDef(
                     if not isinstance(inferred, ClassDef):
                         continue
                     for ancestor in inferred.ancestors():
-                        if not isinstance(ancestor, ClassDef):
-                            continue
                         if ancestor.is_subtype_of("builtins.classmethod"):
                             return "classmethod"
                         if ancestor.is_subtype_of("builtins.staticmethod"):
@@ -1717,7 +1737,7 @@ class FunctionDef(
 
     def scope_lookup(
         self, node: LookupMixIn, name: str, offset: int = 0
-    ) -> tuple[LocalsDictNodeNG, list[nodes.NodeNG]]:
+    ) -> tuple[LocalsDictNodeNG, Sequence[InferenceResult]]:
         """Lookup where the given name is assigned."""
         if name == "__class__":
             # __class__ is an implicit closure reference created by the compiler
@@ -1947,7 +1967,7 @@ class ClassDef(
         self.bases: list[SuccessfulInferenceResult] = []
         """What the class inherits from."""
 
-        self.body: list[node_classes.NodeNG] = []
+        self.body: list[NodeNG] = []
         """The contents of the class body."""
 
         self.name = name
@@ -2030,13 +2050,14 @@ class ClassDef(
         self.type_params = type_params or []
 
     @cached_property
-    def blockstart_tolineno(self):
+    def blockstart_tolineno(self) -> int:
         """The line on which the beginning of this block ends.
 
         :type: int
         """
         if self.bases:
-            return self.bases[-1].tolineno
+            last_base_lineno: int = self.bases[-1].tolineno
+            return last_base_lineno
 
         return self.fromlineno
 
@@ -2180,7 +2201,7 @@ class ClassDef(
 
     def scope_lookup(
         self, node: LookupMixIn, name: str, offset: int = 0
-    ) -> tuple[LocalsDictNodeNG, list[nodes.NodeNG]]:
+    ) -> tuple[LocalsDictNodeNG, Sequence[InferenceResult]]:
         """Lookup where the given name is assigned.
 
         :param node: The node to look for assignments up to.
@@ -2557,7 +2578,10 @@ class ClassDef(
                 attributes = [
                     a
                     for a in attributes
-                    if a not in functions or a is last_function or bases._is_property(a)
+                    # functions holds every FunctionDef of attributes
+                    if not isinstance(a, FunctionDef)
+                    or a is last_function
+                    or bases._is_property(a)
                 ]
 
             for inferred in bases._infer_stmts(attributes, context, frame=self):
@@ -2572,14 +2596,15 @@ class ClassDef(
                     else:
                         yield util.Uninferable
                 elif isinstance(inferred, objects.Property):
-                    function = inferred.function
+                    property_function = inferred.function
                     if not class_context:
                         if not context.callcontext and not setter:
                             context.callcontext = CallContext(
-                                args=function.args.arguments, callee=function
+                                args=property_function.args.arguments,
+                                callee=property_function,
                             )
                         # Through an instance so we can solve the property
-                        yield from function.infer_call_result(
+                        yield from property_function.infer_call_result(
                             caller=self, context=context
                         )
                     # If we're in a class context, we need to determine if the property
@@ -2587,10 +2612,10 @@ class ClassDef(
                     # the metaclass of all its bases), in which case we can resolve the
                     # property. If not, i.e. the property is defined in some base class
                     # instead, then we return the property object
-                    elif metaclass and function.parent.scope() is metaclass:
+                    elif metaclass and property_function.parent.scope() is metaclass:
                         # Resolve a property as long as it is not accessed through
                         # the class itself.
-                        yield from function.infer_call_result(
+                        yield from property_function.infer_call_result(
                             caller=self, context=context
                         )
                     else:
@@ -2630,7 +2655,9 @@ class ClassDef(
                 pass
         return False
 
-    def getitem(self, index, context: InferenceContext | None = None):
+    def getitem(
+        self, index: SuccessfulInferenceResult, context: InferenceContext | None = None
+    ) -> InferenceResult:
         """Return the inference of a subscript.
 
         This is basically looking up the method in the metaclass and calling it.
@@ -2793,7 +2820,7 @@ class ClassDef(
 
     def _islots(
         self,
-    ) -> Generator[node_classes.Const, None, list[InferenceResult] | None]:
+    ) -> Generator[node_classes.Const, None, Sequence[InferenceResult] | None]:
         """Return an iterator with the inferred slots."""
         if "__slots__" not in self.locals:
             return None
@@ -2805,7 +2832,7 @@ class ClassDef(
             return None
         for slots in slots_attributes:
             # check if __slots__ is a valid type
-            if not hasattr(slots, "getattr"):
+            if not _has_getattr(slots):
                 continue
             for meth in ITER_METHODS:
                 try:
@@ -2822,7 +2849,7 @@ class ClassDef(
                 if slots.value:
                     yield slots
                 continue
-            if not hasattr(slots, "itered"):
+            if not _has_itered(slots):
                 # we can't obtain the values, maybe a .deque?
                 continue
 
@@ -2853,7 +2880,7 @@ class ClassDef(
 
         return None
 
-    def _slots(self) -> list[node_classes.Const] | list[InferenceResult] | None:
+    def _slots(self) -> list[node_classes.Const] | Sequence[InferenceResult] | None:
 
         slots = self._islots()
         try:
@@ -2861,7 +2888,7 @@ class ClassDef(
         except StopIteration as exc:
             # The class doesn't have a __slots__ definition or empty slots.
             if exc.args and exc.args[0] not in ("", None):
-                empty_slots: list[InferenceResult] = exc.args[0]
+                empty_slots: Sequence[InferenceResult] = exc.args[0]
                 return empty_slots
             return None
         return [first, *slots]
@@ -3027,7 +3054,9 @@ class ClassDef(
         """
         return True
 
-    def get_children(self):
+    # Brains put inferred values, such as Instance proxies, in bases, so the
+    # children of a class are wider than those of NodeNG.get_children.
+    def get_children(self) -> Iterator[SuccessfulInferenceResult]:  # type: ignore[override] # pyright: ignore[reportIncompatibleMethodOverride]
         if self.decorators is not None:
             yield self.decorators
 

@@ -9,13 +9,14 @@ from __future__ import annotations
 import abc
 import ast
 import builtins
+import enum
 import itertools
 import operator
 import typing
 import warnings
 from collections.abc import Callable, Generator, Iterable, Iterator, Mapping, Sequence
 from functools import cached_property
-from typing import TYPE_CHECKING, Any, ClassVar, Literal, Self, Union
+from typing import TYPE_CHECKING, Any, ClassVar, Literal, Self, Union, cast
 
 from astroid import decorators, protocols, util
 from astroid.bases import BaseInstance, Instance, Proxy, _infer_stmts
@@ -62,7 +63,8 @@ _BadOpMessageT = typing.TypeVar("_BadOpMessageT", bound=util.BadOperationMessage
 
 # pylint: disable-next=consider-alternative-union-syntax
 AssignedStmtsPossibleNode = Union["List", "Tuple", "AssignName", "AssignAttr", None]
-AssignedStmtsCall = Callable[
+# The protocols assigned_stmts functions differ in what they yield.
+AssignedStmtsCall = Callable[  # type: ignore[explicit-any]
     [
         _NodesT,
         AssignedStmtsPossibleNode,
@@ -80,6 +82,22 @@ InferLHS = Callable[
     Generator[InferenceResult, None, InferenceErrorInfo | None],
 ]
 InferUnaryOp = Callable[[_NodesT, str], ConstFactoryResult]
+
+
+class _CallResultInferable(typing.Protocol):
+    """What can infer the result of calling it."""
+
+    def infer_call_result(
+        self,
+        caller: SuccessfulInferenceResult | None,
+        context: InferenceContext | None = None,
+    ) -> Iterator[InferenceResult]: ...  # pragma: no cover
+
+
+def _has_infer_call_result(
+    node: SuccessfulInferenceResult,
+) -> typing.TypeGuard[_CallResultInferable]:
+    return hasattr(node, "infer_call_result")
 
 
 @decorators.raise_if_nothing_inferred
@@ -184,17 +202,23 @@ def are_exclusive(stmt1, stmt2, exceptions: list[str] | None = None) -> bool:
 
 # getitem() helpers.
 
-_SLICE_SENTINEL = object()
+
+class _SliceSentinel(enum.Enum):
+    SENTINEL = enum.auto()
+
+
+_SLICE_SENTINEL = _SliceSentinel.SENTINEL
 
 
 def _slice_value(
     index: NodeNG | None, context: InferenceContext | None = None
-) -> object:
+) -> int | Literal[_SliceSentinel.SENTINEL] | None:
     """Get the value of the given slice index."""
 
     if isinstance(index, Const):
         if isinstance(index.value, (int, type(None))):
-            return index.value
+            value: int | None = index.value
+            return value
     elif index is None:
         return None
     else:
@@ -208,7 +232,8 @@ def _slice_value(
         else:
             if isinstance(inferred, Const):
                 if isinstance(inferred.value, (int, type(None))):
-                    return inferred.value
+                    inferred_value: int | None = inferred.value
+                    return inferred_value
 
     # Use a sentinel, because None can be a valid
     # value that this function can return,
@@ -218,11 +243,15 @@ def _slice_value(
 
 def _infer_slice(
     node: Slice, context: InferenceContext | None = None
-) -> slice[object, object, object]:
+) -> slice[int | None, int | None, int | None]:
     lower = _slice_value(node.lower, context)
     upper = _slice_value(node.upper, context)
     step = _slice_value(node.step, context)
-    if all(elem is not _SLICE_SENTINEL for elem in (lower, upper, step)):
+    if (
+        lower is not _SLICE_SENTINEL
+        and upper is not _SLICE_SENTINEL
+        and step is not _SLICE_SENTINEL
+    ):
         return slice(lower, upper, step)
 
     raise AstroidTypeError(
@@ -248,7 +277,8 @@ def _container_getitem(
             new_cls.parent = instance.parent
             return new_cls
         if isinstance(index, Const):
-            return elts[index.value]
+            item: InferenceResult = elts[index.value]
+            return item
     except ValueError as exc:
         raise AstroidValueError(
             message="Slice {index!r} cannot index container",
@@ -300,7 +330,9 @@ class BaseContainer(_base_nodes.ParentAssignNode, Instance, metaclass=abc.ABCMet
         self.elts = elts
 
     @classmethod
-    def from_elements(cls, elts: Iterable[Any]) -> Self:
+    def from_elements(  # type: ignore[explicit-any] # nodes or constant values
+        cls, elts: Iterable[Any]
+    ) -> Self:
         """Create a node of this type from the given list of elements.
 
         :param elts: The list of elements that the node should contain.
@@ -1783,12 +1815,13 @@ class Call(NodeNG):
             if isinstance(callee, util.UninferableBase):
                 yield callee
                 continue
+            inferable = callee
             try:
-                if hasattr(callee, "infer_call_result"):
+                if _has_infer_call_result(inferable):
                     callcontext.callcontext = CallContext(
                         args=self.args, keywords=self.keywords, callee=callee
                     )
-                    yield from callee.infer_call_result(
+                    yield from inferable.infer_call_result(
                         caller=self, context=callcontext
                     )
             except InferenceError:
@@ -1813,7 +1846,8 @@ class Call(NodeNG):
         return context_lookup
 
 
-COMPARE_OPS: dict[str, Callable[[Any, Any], bool]] = {
+# The operands are literal values of any type.
+COMPARE_OPS: dict[str, Callable[[Any, Any], bool]] = {  # type: ignore[explicit-any]
     "==": operator.eq,
     "!=": operator.ne,
     "<": operator.lt,
@@ -1879,7 +1913,9 @@ class Compare(NodeNG):
 
     # TODO: move to util?
     @staticmethod
-    def _to_literal(node: SuccessfulInferenceResult) -> Any:
+    def _to_literal(  # type: ignore[explicit-any] # literal_eval returns Any
+        node: SuccessfulInferenceResult,
+    ) -> Any:
         # Can raise SyntaxError, ValueError, or TypeError from ast.literal_eval
         # Can raise AttributeError from node.as_string() as not all nodes have a visitor
         # Is this the stupidest idea or the simplest idea?
@@ -2011,7 +2047,7 @@ class Comprehension(NodeNG):
     See astroid/protocols.py for actual implementation.
     """
 
-    def assign_type(self):
+    def assign_type(self) -> Self:
         """The type of assignment that this node performs.
 
         :returns: The assignment type.
@@ -2063,7 +2099,7 @@ class Const(_base_nodes.NoChildrenNode, Instance):
 
     _other_fields = ("value", "kind")
 
-    def __init__(
+    def __init__(  # type: ignore[explicit-any] # a constant of any type
         self,
         value: Any,
         lineno: int | None = None,
@@ -2451,7 +2487,7 @@ class Dict(NodeNG, Instance):
 
     def getitem(
         self, index: Const | Slice, context: InferenceContext | None = None
-    ) -> NodeNG:
+    ) -> InferenceResult:
         """Get an item from this node.
 
         :param index: The node to use as a subscript index.
@@ -2480,7 +2516,9 @@ class Dict(NodeNG, Instance):
                     if inferredkey.value == index.value:
                         return value
 
-        raise AstroidIndexError(index)
+        raise AstroidIndexError(
+            message="Key {index!r} not found", node=self, index=index, context=context
+        )
 
     def bool_value(self, context: InferenceContext | None = None) -> bool:
         """Determine the boolean value of this node.
@@ -3824,7 +3862,8 @@ class Subscript(NodeNG):
                 index_value = self._SUBSCRIPT_SENTINEL
                 if value.__class__ == Instance:
                     index_value = index
-                elif index.__class__ == Instance:
+                # The exact class on purpose, like the __class__ check above.
+                elif type(index) is Instance:  # pylint: disable=unidiomatic-typecheck
                     instance_as_index = helpers.class_instance_as_index(index)
                     if instance_as_index:
                         index_value = instance_as_index
@@ -5747,7 +5786,7 @@ CONST_CLS: dict[type, type[NodeNG]] = {
 
 
 def _create_basic_elements(
-    value: Iterable[Any], node: List | Set | Tuple, building: set[int]
+    value: Iterable[object], node: List | Set | Tuple, building: set[int]
 ) -> list[InferenceResult]:
     """Create a list of nodes to function as the elements of a new node."""
     elements: list[InferenceResult] = []
@@ -5760,7 +5799,7 @@ def _create_basic_elements(
 
 
 def _create_dict_items(
-    values: Mapping[Any, Any], node: Dict, building: set[int]
+    values: Mapping[object, object], node: Dict, building: set[int]
 ) -> list[tuple[InferenceResult, InferenceResult]]:
     """Create a list of node pairs to function as the items of a new dict node."""
     elements: list[tuple[InferenceResult, InferenceResult]] = []
@@ -5774,12 +5813,12 @@ def _create_dict_items(
     return elements
 
 
-def const_factory(value: Any) -> ConstFactoryResult:
+def const_factory(value: object) -> ConstFactoryResult:
     """Return an astroid node for a python value."""
     return _const_factory(value, set())
 
 
-def _const_factory(value: Any, building: set[int]) -> ConstFactoryResult:
+def _const_factory(value: object, building: set[int]) -> ConstFactoryResult:
     """Return an astroid node for value.
 
     ``building`` holds the ids of the containers whose elements are being
@@ -5822,7 +5861,10 @@ def _const_factory(value: Any, building: set[int]) -> ConstFactoryResult:
             end_lineno=None,
             end_col_offset=None,
         )
-        instance.postinit(_create_basic_elements(value, instance, building))
+        # type(value) is exactly list, set or tuple here; isinstance is avoided
+        # on purpose, see above.
+        elements = cast("Iterable[object]", value)
+        instance.postinit(_create_basic_elements(elements, instance, building))
     else:
         assert issubclass(initializer_cls, Dict)
         instance = initializer_cls(
@@ -5832,6 +5874,8 @@ def _const_factory(value: Any, building: set[int]) -> ConstFactoryResult:
             end_lineno=None,
             end_col_offset=None,
         )
-        instance.postinit(_create_dict_items(value, instance, building))
+        # type(value) is exactly dict here.
+        items = cast("Mapping[object, object]", value)
+        instance.postinit(_create_dict_items(items, instance, building))
     building.remove(value_id)
     return instance

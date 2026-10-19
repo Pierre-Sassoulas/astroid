@@ -10,9 +10,9 @@ Previously these were called Mixin nodes.
 from __future__ import annotations
 
 import itertools
-from collections.abc import Callable, Generator, Iterator
+from collections.abc import Callable, Generator, Iterator, Sequence
 from functools import cached_property, lru_cache, partial
-from typing import TYPE_CHECKING, ClassVar, TypeVar
+from typing import TYPE_CHECKING, ClassVar, Self, TypeVar
 
 from astroid import bases, nodes, util
 from astroid.context import (
@@ -36,10 +36,10 @@ if TYPE_CHECKING:
     GetFlowFactory = Callable[
         [
             SuccessfulInferenceResult,
-            InferenceResult | None,
+            InferenceResult,
             _OpNodeT,
             SuccessfulInferenceResult,
-            InferenceResult | None,
+            InferenceResult,
             InferenceContext,
             InferenceContext,
         ],
@@ -108,14 +108,15 @@ class FilterStmtsBaseNode(NodeNG):
             return [node], True
         return _stmts, False
 
-    def assign_type(self):
+    def assign_type(self) -> Self:
         return self
 
 
 class AssignTypeNode(NodeNG):
     """Base node for nodes that can 'assign' such as AnnAssign."""
 
-    def assign_type(self):
+    # ParentAssignNode returns the assignment type of its parent instead.
+    def assign_type(self) -> NodeNG:
         return self
 
     def _get_filtered_stmts(
@@ -313,7 +314,7 @@ class LookupMixIn(NodeNG):
     """Mixin to look up a name in the right scope."""
 
     @lru_cache  # noqa
-    def lookup(self, name: str) -> tuple[LocalsDictNodeNG, list[NodeNG]]:
+    def lookup(self, name: str) -> tuple[LocalsDictNodeNG, Sequence[InferenceResult]]:
         """Lookup where the given variable is assigned.
 
         The lookup starts from self's scope. If self is not a frame itself
@@ -567,17 +568,20 @@ class OperatorNode(NodeNG):
             yield new_context
 
     @staticmethod
-    def _same_type(type1, type2) -> bool:
+    def _same_type(type1: InferenceResult, type2: InferenceResult) -> bool:
         """Check if type1 is the same as type2."""
-        return type1.qname() == type2.qname()
+        # The types come from helpers.object_type: classes, proxies of classes
+        # or Uninferable, which all answer qname().
+        same: bool = type1.qname() == type2.qname()  # type: ignore[union-attr] # pyright: ignore[reportAttributeAccessIssue]
+        return same
 
     @staticmethod
     def _get_aug_flow(
         left: SuccessfulInferenceResult,
-        left_type: InferenceResult | None,
+        left_type: InferenceResult,
         aug_opnode: nodes.AugAssign,
         right: SuccessfulInferenceResult,
-        right_type: InferenceResult | None,
+        right_type: InferenceResult,
         context: InferenceContext,
         reverse_context: InferenceContext,
     ) -> list[partial[Iterator[InferenceResult]]]:
@@ -631,10 +635,10 @@ class OperatorNode(NodeNG):
     @staticmethod
     def _get_binop_flow(
         left: SuccessfulInferenceResult,
-        left_type: InferenceResult | None,
+        left_type: InferenceResult,
         binary_opnode: nodes.AugAssign | nodes.BinOp,
         right: SuccessfulInferenceResult,
-        right_type: InferenceResult | None,
+        right_type: InferenceResult,
         context: InferenceContext,
         reverse_context: InferenceContext,
     ) -> list[partial[Iterator[InferenceResult]]]:

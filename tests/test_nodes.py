@@ -40,6 +40,7 @@ from astroid.const import (
 from astroid.context import InferenceContext
 from astroid.exceptions import (
     AstroidBuildingError,
+    AstroidIndexError,
     AstroidSyntaxError,
     AstroidTypeError,
     AttributeInferenceError,
@@ -2439,6 +2440,22 @@ def test_import_infer_name_without_name(code: str) -> None:
 def test_child_sequence_of_single_child() -> None:
     node = extract_node("if x: pass")
     assert node.child_sequence(node.test) == [node.test]
+
+
+def test_dict_getitem_missing_key_error_message() -> None:
+    """The error for a missing key can be turned into a string."""
+    node = extract_node("{1: 2}")
+    index = extract_node("3")
+    with pytest.raises(AstroidIndexError) as excinfo:
+        node.getitem(index)
+    assert str(excinfo.value).startswith("Key <Const.int")
+
+
+def test_call_of_object_without_call_result() -> None:
+    """Calling something that cannot infer a call result infers nothing."""
+    node = extract_node("import os\nos()")
+    with pytest.raises(InferenceError):
+        node.inferred()
 
 
 def test_infer_argument_sharing_vararg_name() -> None:

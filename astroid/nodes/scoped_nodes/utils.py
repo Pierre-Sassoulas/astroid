@@ -6,15 +6,17 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
 from astroid.manager import AstroidManager
 
 if TYPE_CHECKING:
     from astroid import nodes
+    from astroid.typing import InferenceResult
 
 
-def builtin_lookup(name: str) -> tuple[nodes.Module, list[nodes.NodeNG]]:
+def builtin_lookup(name: str) -> tuple[nodes.Module, Sequence[InferenceResult]]:
     """Lookup a name in the builtin module.
 
     Return the list of matching statements and the ast for the builtin module
@@ -29,7 +31,7 @@ def builtin_lookup(name: str) -> tuple[nodes.Module, list[nodes.NodeNG]]:
     if name == "__dict__":
         return _builtin_astroid, ()
     try:
-        stmts: list[nodes.NodeNG] = _builtin_astroid.locals[name]  # type: ignore[assignment]
+        stmts: Sequence[InferenceResult] = _builtin_astroid.locals[name]
     except KeyError:
         stmts = []
     return _builtin_astroid, stmts
