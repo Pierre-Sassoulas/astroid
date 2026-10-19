@@ -226,8 +226,10 @@ __all__ = [
 ]
 
 
-def __getattr__(name: str):
-    if (val := globals().get(f"_DEPRECATED_{name}")) is None:
+def __getattr__(name: str) -> type[_DEPRECATED_NodeNG]:
+    # The deprecated names are the node classes imported as _DEPRECATED_*
+    val: type[_DEPRECATED_NodeNG] | None = globals().get(f"_DEPRECATED_{name}")
+    if val is None:
         msg = f"module '{__name__}' has no attribute '{name}"
         raise AttributeError(msg)
 
