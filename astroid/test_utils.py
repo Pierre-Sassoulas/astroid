@@ -10,14 +10,20 @@ import contextlib
 import functools
 import sys
 import warnings
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from typing import ParamSpec, TypeVar
 
 import pytest
 
 from astroid import manager, nodes, transforms
 
+_P = ParamSpec("_P")
+_R = TypeVar("_R")
 
-def require_version(minver: str = "0.0.0", maxver: str = "4.0.0") -> Callable:
+
+def require_version(
+    minver: str = "0.0.0", maxver: str = "4.0.0"
+) -> Callable[[Callable[_P, _R]], Callable[_P, _R | None]]:
     """Compare version of python interpreter to the given one and skips the test if older."""
 
     def parse(python_version: str) -> tuple[int, ...]:
@@ -30,7 +36,7 @@ def require_version(minver: str = "0.0.0", maxver: str = "4.0.0") -> Callable:
     min_version = parse(minver)
     max_version = parse(maxver)
 
-    def check_require_version(f):
+    def check_require_version(f: Callable[_P, _R]) -> Callable[_P, _R | None]:
         current: tuple[int, int, int] = sys.version_info[:3]
         if min_version < current <= max_version:
             return f
@@ -38,7 +44,7 @@ def require_version(minver: str = "0.0.0", maxver: str = "4.0.0") -> Callable:
         version: str = ".".join(str(v) for v in sys.version_info)
 
         @functools.wraps(f)
-        def new_f(*args, **kwargs):
+        def new_f(*args: _P.args, **kwargs: _P.kwargs) -> None:
             if current <= min_version:
                 pytest.skip(f"Needs Python > {minver}. Current version is {version}.")
             elif current > max_version:
@@ -49,12 +55,12 @@ def require_version(minver: str = "0.0.0", maxver: str = "4.0.0") -> Callable:
     return check_require_version
 
 
-def get_name_node(start_from, name, index=0):
+def get_name_node(start_from: nodes.NodeNG, name: str, index: int = 0) -> nodes.Name:
     return [n for n in start_from.nodes_of_class(nodes.Name) if n.name == name][index]
 
 
 @contextlib.contextmanager
-def enable_warning(warning):
+def enable_warning(warning: type[Warning]) -> Iterator[None]:
     warnings.simplefilter("always", warning)
     try:
         yield
@@ -64,7 +70,7 @@ def enable_warning(warning):
         warnings.simplefilter("default", warning)
 
 
-def brainless_manager():
+def brainless_manager() -> manager.AstroidManager:
     m = manager.AstroidManager()
     # avoid caching into the AstroidManager borg since we get problems
     # with other tests :
