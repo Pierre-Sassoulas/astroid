@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import abc
 import ast
+import builtins
 import itertools
 import operator
 import typing
@@ -2588,7 +2589,11 @@ class Expr(_base_nodes.Statement):
 class EmptyNode(_base_nodes.NoChildrenNode):
     """Holds an arbitrary object in the :attr:`~astroid.nodes.LocalsDictNodeNG.locals`."""
 
-    object = None
+    object: builtins.object = None
+    """The living object this node stands for."""
+
+    attrname: str
+    """The name some brains give to the object, when they set one."""
 
     def __init__(
         self,
@@ -3630,8 +3635,8 @@ class Slice(NodeNG):
         # pylint: disable-next=import-outside-toplevel
         from astroid.nodes import ClassDef
 
-        builtins = AstroidManager().builtins_module
-        slice_class = builtins.getattr("slice")[0]
+        builtins_module = AstroidManager().builtins_module
+        slice_class = builtins_module.getattr("slice")[0]
         assert isinstance(slice_class, ClassDef)
         return slice_class
 
