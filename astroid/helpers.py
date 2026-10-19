@@ -352,7 +352,8 @@ def _higher_function_scope(node: nodes.NodeNG) -> nodes.FunctionDef | None:
         otherwise an instance of :class:`astroid.nodes.scoped_nodes.Function`,
         which encloses the given node.
     """
-    current = node
+    # Parents can be proxies (the object model builds nodes under them)
+    current: SuccessfulInferenceResult = node
     while current.parent and not isinstance(current.parent, nodes.FunctionDef):
         current = current.parent
     # Nodes are always truthy: the loop stopped on a function or the root

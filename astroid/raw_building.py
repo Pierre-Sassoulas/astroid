@@ -25,6 +25,7 @@ from astroid.nodes import node_classes
 
 if TYPE_CHECKING:
     from astroid.manager import AstroidManager
+    from astroid.typing import SuccessfulInferenceResult
 
 
 _FunctionTypes = (
@@ -285,7 +286,8 @@ def _would_create_parent_cycle(node: nodes.NodeNG, child: nodes.NodeNG) -> bool:
 
     That happens when ``child`` already is ``node`` or one of its ancestors.
     """
-    ancestor: nodes.NodeNG | None = node
+    # Parents can be proxies (the object model builds nodes under them)
+    ancestor: SuccessfulInferenceResult | None = node
     while ancestor is not None:
         if ancestor is child:
             return True
