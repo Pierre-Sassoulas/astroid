@@ -93,7 +93,7 @@ class LocalsDictNodeNG(_base_nodes.LookupMixIn):
         # self is at the top level of a module, or is enclosed only by ClassDefs
         return builtin_lookup(name)
 
-    def set_local(self, name: str, stmt: nodes.NodeNG) -> None:
+    def set_local(self, name: str, stmt: InferenceResult) -> None:
         """Define that the given name is declared in the given statement node.
 
         .. seealso:: :meth:`scope`

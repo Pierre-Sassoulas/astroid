@@ -5058,7 +5058,7 @@ class NamedExpr(_base_nodes.AssignTypeNode):
 
         return self.parent.scope()
 
-    def set_local(self, name: str, stmt: NodeNG) -> None:
+    def set_local(self, name: str, stmt: InferenceResult) -> None:
         """Define that the given name is declared in the given statement node.
         NamedExpr's in Arguments, Keyword or Comprehension are evaluated in their
         parent's parent scope. So we add to their frame's locals.
