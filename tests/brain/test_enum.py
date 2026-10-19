@@ -615,3 +615,38 @@ class EnumBrainTest(unittest.TestCase):
         # Inference must not raise ``DuplicateBasesError``.
         inferred = next(node.infer())
         assert isinstance(inferred, nodes.ClassDef)
+
+
+def test_enum_functional_api_with_mapping() -> None:
+    node = builder.extract_node("""
+    from enum import Enum
+    Enum("Color", {"red": 1, "blue": 2}) #@
+    """)
+    inferred = next(node.infer())
+    assert set(inferred._proxied.instance_attrs) == {"red", "blue"}
+
+
+def test_enum_functional_api_with_name_value_pairs() -> None:
+    node = builder.extract_node("""
+    from enum import Enum
+    Enum("Color", [("red", 1), ("blue", 2)]) #@
+    """)
+    inferred = next(node.infer())
+    assert set(inferred._proxied.instance_attrs) == {"red", "blue"}
+
+
+@pytest.mark.parametrize(
+    "call",
+    [
+        'Enum("Color", [])',  # no member at all
+        'Enum("Color", [int])',  # a member name that is not a constant
+        'Enum("Color", [(int, 1)])',
+        'Enum(int, "red blue")',  # a class name that is not a constant
+    ],
+)
+def test_enum_functional_api_falls_back_to_default_inference(call: str) -> None:
+    node = builder.extract_node(f"""
+    from enum import Enum
+    {call} #@
+    """)
+    assert next(node.infer()) is util.Uninferable

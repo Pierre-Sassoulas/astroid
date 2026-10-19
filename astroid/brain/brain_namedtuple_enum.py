@@ -13,7 +13,7 @@ from collections.abc import Iterator
 from textwrap import dedent
 from typing import Final
 
-from astroid import arguments, bases, nodes, util
+from astroid import arguments, bases, nodes, objects, util
 from astroid.builder import AstroidBuilder, _extract_single_node, extract_node
 from astroid.context import InferenceContext
 from astroid.exceptions import (
@@ -52,6 +52,13 @@ def _infer_first(node, context):
     return value
 
 
+def _infer_first_const_value(node, context):
+    value = _infer_first(node, context)
+    if not isinstance(value, nodes.Const):
+        raise UseInferenceDefault
+    return value.value
+
+
 def _find_func_form_arguments(node, context):
     def _extract_namedtuple_arg_or_keyword(  # pylint: disable=inconsistent-return-statements
         position, key_name=None
@@ -69,7 +76,7 @@ def _find_func_form_arguments(node, context):
 
     name = _extract_namedtuple_arg_or_keyword(position=0, key_name="typename")
     names = _extract_namedtuple_arg_or_keyword(position=1, key_name="field_names")
-    if name and names:
+    if isinstance(name, nodes.Const) and names:
         return name.value, names
 
     raise UseInferenceDefault()
@@ -91,52 +98,57 @@ def infer_func_form(
     # whitespace-separate string
     try:
         name, names = _find_func_form_arguments(node, context)
-        try:
+        if isinstance(names, nodes.Const) and isinstance(names.value, str):
             attributes: list[str] = names.value.replace(",", " ").split()
-        except (AttributeError, TypeError) as exc:
-            # ``names`` is not a whitespace-separated string: it is either a
-            # container node, which has no ``value`` (AttributeError), or a
-            # constant of another type such as bytes (TypeError).
 
-            # Handle attributes of NamedTuples
-            if not enum:
-                attributes = []
-                fields = _get_namedtuple_fields(node)
-                if fields:
-                    fields_node = extract_node(fields)
-                    attributes = [
-                        _infer_first(const, context).value for const in fields_node.elts
-                    ]
+        # Handle attributes of NamedTuples
+        elif not enum:
+            attributes = []
+            fields = _get_namedtuple_fields(node)
+            if fields:
+                fields_node = extract_node(fields)
+                attributes = [
+                    _infer_first_const_value(const, context)
+                    for const in fields_node.elts
+                ]
 
-            # Handle attributes of Enums
-            else:
-                # Enums supports either iterator of (name, value) pairs
-                # or mappings.
-                if hasattr(names, "items") and isinstance(names.items, list):
+        # Handle attributes of Enums
+        else:
+            # Enums supports either iterator of (name, value) pairs
+            # or mappings.
+            if isinstance(names, nodes.Dict):
+                attributes = [
+                    _infer_first(const[0], context).value
+                    for const in names.items
+                    if isinstance(const[0], nodes.Const)
+                ]
+            elif isinstance(
+                names,
+                (
+                    nodes.BaseContainer,
+                    objects.DictItems,
+                    objects.DictKeys,
+                    objects.DictValues,
+                ),
+            ):
+                # Enums can support either ["a", "b", "c"]
+                # or [("a", 1), ("b", 2), ...], but they can't
+                # be mixed.
+                if all(isinstance(const, nodes.Tuple) for const in names.elts):
                     attributes = [
-                        _infer_first(const[0], context).value
-                        for const in names.items
-                        if isinstance(const[0], nodes.Const)
+                        _infer_first_const_value(const.elts[0], context)
+                        for const in names.elts
+                        if isinstance(const, nodes.Tuple)
                     ]
-                elif hasattr(names, "elts"):
-                    # Enums can support either ["a", "b", "c"]
-                    # or [("a", 1), ("b", 2), ...], but they can't
-                    # be mixed.
-                    if all(isinstance(const, nodes.Tuple) for const in names.elts):
-                        attributes = [
-                            _infer_first(const.elts[0], context).value
-                            for const in names.elts
-                            if isinstance(const, nodes.Tuple)
-                        ]
-                    else:
-                        attributes = [
-                            _infer_first(const, context).value for const in names.elts
-                        ]
                 else:
-                    raise AttributeError from exc
-                if not attributes:
-                    raise AttributeError from exc
-    except (AttributeError, InferenceError) as exc:
+                    attributes = [
+                        _infer_first_const_value(const, context) for const in names.elts
+                    ]
+            else:
+                raise UseInferenceDefault
+            if not attributes:
+                raise UseInferenceDefault
+    except InferenceError as exc:
         raise UseInferenceDefault from exc
 
     if not enum:
@@ -707,8 +719,7 @@ def register(manager: AstroidManager) -> None:
     manager.register_transform(
         nodes.FunctionDef,
         inference_tip(infer_typing_namedtuple_function),
-        lambda node: node.name == "NamedTuple"
-        and getattr(node.root(), "name", None) == "typing",
+        lambda node: node.name == "NamedTuple" and node.root().name == "typing",
     )
     manager.register_transform(
         nodes.Call,
