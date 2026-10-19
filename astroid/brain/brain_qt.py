@@ -4,7 +4,7 @@
 
 """Astroid hooks for the PyQT library."""
 
-from astroid import nodes
+from astroid import bases, nodes
 from astroid.brain.helpers import register_module_extender
 from astroid.builder import AstroidBuilder, parse
 from astroid.manager import AstroidManager
@@ -17,13 +17,15 @@ def _looks_like_signal(
     klasses = node.instance_attrs.get("__class__", [])
     # On PySide2 or PySide6 (since  Qt 5.15.2) the Signal class changed locations
     if node.qname().partition(".")[0] in {"PySide2", "PySide6"}:
-        return any(cls.qname() == "Signal" for cls in klasses)  # pragma: no cover
+        return any(  # pragma: no cover
+            isinstance(cls, (nodes.LocalsDictNodeNG, bases.Proxy))
+            and cls.qname() == "Signal"
+            for cls in klasses
+        )
     if klasses:
-        try:
-            return klasses[0].name == signal_name
-        except AttributeError:  # pragma: no cover
-            # return False if the cls does not have a name attribute
-            pass
+        # False if the class does not have a name attribute
+        name: str | None = getattr(klasses[0], "name", None)
+        return name == signal_name
     return False
 
 
@@ -39,7 +41,8 @@ def transform_pyqt_signal(node: nodes.FunctionDef) -> None:
         def emit(self, *args):
             pass
     """)
-    signal_cls: nodes.ClassDef = module["pyqtSignal"]
+    signal_cls = module["pyqtSignal"]
+    assert isinstance(signal_cls, nodes.ClassDef)
     node.instance_attrs["emit"] = [signal_cls["emit"]]
     node.instance_attrs["disconnect"] = [signal_cls["disconnect"]]
     node.instance_attrs["connect"] = [signal_cls["connect"]]
@@ -55,13 +58,14 @@ def transform_pyside_signal(node: nodes.ClassDef) -> None:
         def emit(self, *args):
             pass
     """)
-    signal_cls: nodes.ClassDef = module["NotPySideSignal"]
+    signal_cls = module["NotPySideSignal"]
+    assert isinstance(signal_cls, nodes.ClassDef)
     node.instance_attrs["connect"] = [signal_cls["connect"]]
     node.instance_attrs["disconnect"] = [signal_cls["disconnect"]]
     node.instance_attrs["emit"] = [signal_cls["emit"]]
 
 
-def pyqt4_qtcore_transform():
+def pyqt4_qtcore_transform() -> nodes.Module:
     return AstroidBuilder(AstroidManager()).string_build("""
 
 def SIGNAL(signal_name): pass
