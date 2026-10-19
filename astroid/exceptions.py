@@ -257,7 +257,7 @@ class InferenceError(ResolveError):  # pylint: disable=too-many-instance-attribu
         arg: str | None = None,
         positional_arguments: Sequence[InferenceResult] | None = None,
         unpacked_args: Sequence[InferenceResult] | None = None,
-        keyword_arguments: Mapping[str | None, InferenceResult] | None = None,
+        keyword_arguments: Mapping[str, InferenceResult] | None = None,
         unpacked_kwargs: Mapping[str | None, InferenceResult] | None = None,
         **kws: object,
     ) -> None:

@@ -4,11 +4,14 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable, Iterator
+from typing import Self
+
 from astroid import nodes
 from astroid.bases import Instance
 from astroid.context import CallContext, InferenceContext
 from astroid.exceptions import InferenceError, NoDefault
-from astroid.typing import InferenceResult
+from astroid.typing import InferenceResult, SuccessfulInferenceResult
 from astroid.util import Uninferable, UninferableBase, safe_infer
 
 
@@ -32,9 +35,11 @@ class CallSite:
     def __init__(
         self,
         callcontext: CallContext,
-        argument_context_map=None,
+        argument_context_map: (
+            dict[SuccessfulInferenceResult, InferenceContext] | None
+        ) = None,
         context: InferenceContext | None = None,
-    ):
+    ) -> None:
         if argument_context_map is None:
             argument_context_map = {}
         self.argument_context_map = argument_context_map
@@ -47,14 +52,18 @@ class CallSite:
         self.positional_arguments = [
             arg for arg in self._unpacked_args if not isinstance(arg, UninferableBase)
         ]
+        # Only the failed ``**`` unpackings have a None key, with an
+        # Uninferable value.
         self.keyword_arguments = {
             key: value
             for key, value in self._unpacked_kwargs.items()
-            if not isinstance(value, UninferableBase)
+            if key is not None and not isinstance(value, UninferableBase)
         }
 
     @classmethod
-    def from_call(cls, call_node: nodes.Call, context: InferenceContext | None = None):
+    def from_call(
+        cls, call_node: nodes.Call, context: InferenceContext | None = None
+    ) -> Self:
         """Get a CallSite object from the given Call node.
 
         context will be used to force a single inference path.
@@ -102,8 +111,8 @@ class CallSite:
                     values[name] = Uninferable
                     continue
 
-                for dict_key, dict_value in inferred.items:
-                    dict_key = safe_infer(dict_key, context=context)
+                for key_node, dict_value in inferred.items:
+                    dict_key = safe_infer(key_node, context=context)
                     if not isinstance(dict_key, nodes.Const):
                         values[name] = Uninferable
                         continue
@@ -120,8 +129,10 @@ class CallSite:
                 values[name] = value
         return values
 
-    def _unpack_args(self, args, context: InferenceContext | None = None):
-        values = []
+    def _unpack_args(
+        self, args: Iterable[nodes.NodeNG], context: InferenceContext | None = None
+    ) -> list[InferenceResult]:
+        values: list[InferenceResult] = []
         context = context or InferenceContext()
         context.extra_context = self.argument_context_map
         for arg in args:
@@ -130,7 +141,8 @@ class CallSite:
                 if isinstance(inferred, UninferableBase):
                     values.append(Uninferable)
                     continue
-                if not hasattr(inferred, "elts"):
+                # Only containers (list, tuple, set...) have elements
+                if not isinstance(inferred, nodes.BaseContainer):
                     values.append(Uninferable)
                     continue
                 values.extend(inferred.elts)
@@ -140,7 +152,7 @@ class CallSite:
 
     def infer_argument(
         self, funcnode: InferenceResult, name: str, context: InferenceContext
-    ):  # noqa: C901
+    ) -> Iterator[InferenceResult]:  # noqa: C901
         """Infer a function argument value according to the call context."""
         # pylint: disable = too-many-branches
 
@@ -216,6 +228,8 @@ class CallSite:
                 # is the first argument.
                 if boundnode is None and funcnode.type == "method" and positional:
                     return positional[0].infer(context=context)
+                # Methods are defined in a class, so they have a parent
+                assert funcnode.parent is not None
                 if boundnode is None:
                     # XXX can do better ?
                     boundnode = funcnode.parent.frame()
