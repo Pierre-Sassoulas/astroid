@@ -235,7 +235,7 @@ def _infer_slice(
 def _container_getitem(
     instance: List | Tuple,
     elts: list[SuccessfulInferenceResult],
-    index: NodeNG,
+    index: SuccessfulInferenceResult,
     context: InferenceContext | None = None,
 ) -> SuccessfulInferenceResult:
     """Get a slice or an item, using the given *index*, for the given sequence."""
@@ -2124,7 +2124,9 @@ class Const(_base_nodes.NoChildrenNode, Instance):
             raise AttributeError
         return super().__getattr__(name)
 
-    def getitem(self, index, context: InferenceContext | None = None):
+    def getitem(
+        self, index: SuccessfulInferenceResult, context: InferenceContext | None = None
+    ) -> Const:
         """Get an item from this node if subscriptable.
 
         :param index: The node to use as a subscript index.
@@ -3354,7 +3356,9 @@ class List(BaseContainer):
         """
         return "builtins.list"
 
-    def getitem(self, index, context: InferenceContext | None = None):
+    def getitem(
+        self, index: SuccessfulInferenceResult, context: InferenceContext | None = None
+    ) -> SuccessfulInferenceResult:
         """Get an item from this node.
 
         :param index: The node to use as a subscript index.
@@ -4128,7 +4132,9 @@ class Tuple(BaseContainer):
         """
         return "builtins.tuple"
 
-    def getitem(self, index, context: InferenceContext | None = None):
+    def getitem(
+        self, index: SuccessfulInferenceResult, context: InferenceContext | None = None
+    ) -> SuccessfulInferenceResult:
         """Get an item from this node.
 
         :param index: The node to use as a subscript index.
