@@ -15,7 +15,7 @@ import token
 from collections.abc import Callable, Collection, Generator
 from io import StringIO
 from tokenize import TokenError, TokenInfo, generate_tokens
-from typing import TYPE_CHECKING, Final, TypeVar, cast, overload
+from typing import TYPE_CHECKING, Final, Protocol, TypeVar, cast, overload
 
 from astroid import nodes
 from astroid._ast import (
@@ -26,12 +26,13 @@ from astroid._ast import (
     UNARY_OP_CLASSES,
     parse_function_type_comment,
 )
-from astroid.const import PY312_PLUS, PY313_PLUS, Context
+from astroid.const import PY313_PLUS, Context
 from astroid.nodes.utils import Position
 from astroid.typing import InferenceResult
 
 if TYPE_CHECKING:
     from astroid.manager import AstroidManager
+    from astroid.nodes.node_classes import Pattern
 
     T_Doc = TypeVar(
         "T_Doc",
@@ -43,6 +44,22 @@ if TYPE_CHECKING:
     _ForT = TypeVar("_ForT", nodes.For, nodes.AsyncFor)
     _WithT = TypeVar("_WithT", nodes.With, nodes.AsyncWith)
     NodesWithDocsType = nodes.Module | nodes.ClassDef | nodes.FunctionDef
+
+
+class _PositionedAST(Protocol):
+    """An ast node with a position, as the ast nodes holding a name have."""
+
+    @property
+    def lineno(self) -> int: ...  # pragma: no cover
+
+    @property
+    def col_offset(self) -> int: ...  # pragma: no cover
+
+    @property
+    def end_lineno(self) -> int | None: ...  # pragma: no cover
+
+    @property
+    def end_col_offset(self) -> int | None: ...  # pragma: no cover
 
 
 REDIRECT: Final[dict[str, str]] = {
@@ -466,7 +483,7 @@ class TreeRebuilder:
         def visit(self, node: ast.MatchOr, parent: nodes.NodeNG) -> nodes.MatchOr: ...
 
         @overload
-        def visit(self, node: ast.pattern, parent: nodes.NodeNG) -> nodes.Pattern: ...
+        def visit(self, node: ast.pattern, parent: nodes.NodeNG) -> Pattern: ...
 
         if sys.version_info >= (3, 14):
 
@@ -754,16 +771,16 @@ class TreeRebuilder:
 
     @overload
     def visit_assignname(
-        self, node: ast.AST, parent: nodes.NodeNG, node_name: str
+        self, node: _PositionedAST, parent: nodes.NodeNG, node_name: str
     ) -> nodes.AssignName: ...
 
     @overload
     def visit_assignname(
-        self, node: ast.AST, parent: nodes.NodeNG, node_name: None
+        self, node: _PositionedAST, parent: nodes.NodeNG, node_name: None
     ) -> None: ...
 
     def visit_assignname(
-        self, node: ast.AST, parent: nodes.NodeNG, node_name: str | None
+        self, node: _PositionedAST, parent: nodes.NodeNG, node_name: str | None
     ) -> nodes.AssignName | None:
         """Visit a node and return a AssignName node.
 
@@ -853,6 +870,24 @@ class TreeRebuilder:
         )
         return newnode
 
+    if sys.version_info >= (3, 12):
+
+        def _visit_type_params(
+            self,
+            node: ast.ClassDef | ast.FunctionDef | ast.AsyncFunctionDef,
+            parent: nodes.NodeNG,
+        ) -> list[nodes.TypeVar | nodes.ParamSpec | nodes.TypeVarTuple]:
+            return [self.visit(param, parent) for param in node.type_params]
+
+    else:
+
+        def _visit_type_params(
+            self,
+            node: ast.ClassDef | ast.FunctionDef | ast.AsyncFunctionDef,
+            parent: nodes.NodeNG,
+        ) -> list[nodes.TypeVar | nodes.ParamSpec | nodes.TypeVarTuple]:
+            return []
+
     def visit_classdef(
         self, node: ast.ClassDef, parent: nodes.NodeNG
     ) -> nodes.ClassDef:
@@ -884,11 +919,7 @@ class TreeRebuilder:
             ],
             position=self._get_position_info(node, newnode),
             doc_node=self.visit(doc_ast_node, newnode),
-            type_params=(
-                [self.visit(param, newnode) for param in node.type_params]
-                if PY312_PLUS
-                else []
-            ),
+            type_params=self._visit_type_params(node, newnode),
         )
         parent.set_local(newnode.name, newnode)
         return newnode
@@ -1038,7 +1069,8 @@ class TreeRebuilder:
             # CPython stores the unpacked mapping in ``key`` and leaves
             # ``value`` as ``None``. Mirror the ``ast.Dict`` representation of
             # ``{**d}``: a ``DictUnpack`` key together with the real value.
-            value = self.visit(node.key, newnode)
+            # (typeshed's stubs for Python < 3.15 have no None value)
+            value = self.visit(node.key, newnode)  # type: ignore[unreachable]
             key = nodes.DictUnpack(
                 lineno=value.lineno,
                 col_offset=value.col_offset,
@@ -1125,6 +1157,7 @@ class TreeRebuilder:
     ) -> nodes.ImportFrom:
         """Visit an ImportFrom node by returning a fresh instance of it."""
         names = [(alias.name, alias.asname) for alias in node.names]
+        is_lazy = self._is_lazy(node)
         newnode = nodes.ImportFrom(
             fromname=node.module or "",
             names=names,
@@ -1134,7 +1167,7 @@ class TreeRebuilder:
             end_lineno=node.end_lineno,
             end_col_offset=node.end_col_offset,
             parent=parent,
-            is_lazy=node.is_lazy if sys.version_info >= (3, 15) else 0,
+            is_lazy=is_lazy,
         )
         # store From names to add them to locals after building
         self._import_from_nodes.append(
@@ -1203,11 +1236,7 @@ class TreeRebuilder:
             type_comment_args=type_comment_args,
             position=self._get_position_info(node, newnode),
             doc_node=self.visit(doc_ast_node, newnode),
-            type_params=(
-                [self.visit(param, newnode) for param in node.type_params]
-                if PY312_PLUS
-                else []
-            ),
+            type_params=self._visit_type_params(node, newnode),
         )
         self._global_names.pop()
         parent.set_local(newnode.name, newnode)
@@ -1263,10 +1292,7 @@ class TreeRebuilder:
             )
             # Prohibit a local save if we are in an ExceptHandler.
             if not isinstance(parent, nodes.ExceptHandler):
-                # mypy doesn't recognize that newnode has to be AssignAttr because it
-                # doesn't support ParamSpec
-                # See https://github.com/python/mypy/issues/8645
-                self._delayed_assattr.append(newnode)  # type: ignore[arg-type]
+                self._delayed_assattr.append(newnode)
         else:
             newnode = nodes.Attribute(
                 attrname=node.attr,
@@ -1326,9 +1352,22 @@ class TreeRebuilder:
         )
         return newnode
 
+    if sys.version_info >= (3, 15):
+
+        @staticmethod
+        def _is_lazy(node: ast.Import | ast.ImportFrom) -> int:
+            return node.is_lazy
+
+    else:
+
+        @staticmethod
+        def _is_lazy(node: ast.Import | ast.ImportFrom) -> int:
+            return 0
+
     def visit_import(self, node: ast.Import, parent: nodes.NodeNG) -> nodes.Import:
         """Visit a Import node by returning a fresh instance of it."""
         names = [(alias.name, alias.asname) for alias in node.names]
+        is_lazy = self._is_lazy(node)
         newnode = nodes.Import(
             names=names,
             lineno=node.lineno,
@@ -1336,7 +1375,7 @@ class TreeRebuilder:
             end_lineno=node.end_lineno,
             end_col_offset=node.end_col_offset,
             parent=parent,
-            is_lazy=node.is_lazy if sys.version_info >= (3, 15) else 0,
+            is_lazy=is_lazy,
         )
         # save import names in parent's locals:
         for name, asname in newnode.names:
@@ -1370,10 +1409,12 @@ class TreeRebuilder:
             end_col_offset=node.end_col_offset,
             parent=parent,
         )
+        value = self.visit(node.value, newnode)
+        format_spec = self.visit(node.format_spec, newnode)
+        # The format specification is an f-string
+        assert format_spec is None or isinstance(format_spec, nodes.JoinedStr)
         newnode.postinit(
-            value=self.visit(node.value, newnode),
-            conversion=node.conversion,
-            format_spec=self.visit(node.format_spec, newnode),
+            value=value, conversion=node.conversion, format_spec=format_spec
         )
         return newnode
 
@@ -1512,26 +1553,28 @@ class TreeRebuilder:
             parent=parent,
         )
 
-    def visit_paramspec(
-        self, node: ast.ParamSpec, parent: nodes.NodeNG
-    ) -> nodes.ParamSpec:
-        """Visit a ParamSpec node by returning a fresh instance of it."""
-        newnode = nodes.ParamSpec(
-            lineno=node.lineno,
-            col_offset=node.col_offset,
-            end_lineno=node.end_lineno,
-            end_col_offset=node.end_col_offset,
-            parent=parent,
-        )
-        # Add AssignName node for 'node.name'
-        # https://bugs.python.org/issue43994
-        newnode.postinit(
-            name=self.visit_assignname(node, newnode, node.name),
-            default_value=(
-                self.visit(node.default_value, newnode) if PY313_PLUS else None
-            ),
-        )
-        return newnode
+    if sys.version_info >= (3, 12):
+
+        def visit_paramspec(
+            self, node: ast.ParamSpec, parent: nodes.NodeNG
+        ) -> nodes.ParamSpec:
+            """Visit a ParamSpec node by returning a fresh instance of it."""
+            newnode = nodes.ParamSpec(
+                lineno=node.lineno,
+                col_offset=node.col_offset,
+                end_lineno=node.end_lineno,
+                end_col_offset=node.end_col_offset,
+                parent=parent,
+            )
+            # Add AssignName node for 'node.name'
+            # https://bugs.python.org/issue43994
+            newnode.postinit(
+                name=self.visit_assignname(node, newnode, node.name),
+                default_value=(
+                    self.visit(node.default_value, newnode) if PY313_PLUS else None
+                ),
+            )
+            return newnode
 
     def visit_pass(self, node: ast.Pass, parent: nodes.NodeNG) -> nodes.Pass:
         """Visit a Pass node by returning a fresh instance of it."""
@@ -1693,64 +1736,68 @@ class TreeRebuilder:
         newnode.postinit([self.visit(child, newnode) for child in node.elts])
         return newnode
 
-    def visit_typealias(
-        self, node: ast.TypeAlias, parent: nodes.NodeNG
-    ) -> nodes.TypeAlias:
-        """Visit a TypeAlias node by returning a fresh instance of it."""
-        newnode = nodes.TypeAlias(
-            lineno=node.lineno,
-            col_offset=node.col_offset,
-            end_lineno=node.end_lineno,
-            end_col_offset=node.end_col_offset,
-            parent=parent,
-        )
-        newnode.postinit(
-            name=self.visit(node.name, newnode),
-            type_params=[self.visit(p, newnode) for p in node.type_params],
-            value=self.visit(node.value, newnode),
-        )
-        return newnode
+    if sys.version_info >= (3, 12):
 
-    def visit_typevar(self, node: ast.TypeVar, parent: nodes.NodeNG) -> nodes.TypeVar:
-        """Visit a TypeVar node by returning a fresh instance of it."""
-        newnode = nodes.TypeVar(
-            lineno=node.lineno,
-            col_offset=node.col_offset,
-            end_lineno=node.end_lineno,
-            end_col_offset=node.end_col_offset,
-            parent=parent,
-        )
-        # Add AssignName node for 'node.name'
-        # https://bugs.python.org/issue43994
-        newnode.postinit(
-            name=self.visit_assignname(node, newnode, node.name),
-            bound=self.visit(node.bound, newnode),
-            default_value=(
-                self.visit(node.default_value, newnode) if PY313_PLUS else None
-            ),
-        )
-        return newnode
+        def visit_typealias(
+            self, node: ast.TypeAlias, parent: nodes.NodeNG
+        ) -> nodes.TypeAlias:
+            """Visit a TypeAlias node by returning a fresh instance of it."""
+            newnode = nodes.TypeAlias(
+                lineno=node.lineno,
+                col_offset=node.col_offset,
+                end_lineno=node.end_lineno,
+                end_col_offset=node.end_col_offset,
+                parent=parent,
+            )
+            newnode.postinit(
+                name=self.visit(node.name, newnode),
+                type_params=[self.visit(p, newnode) for p in node.type_params],
+                value=self.visit(node.value, newnode),
+            )
+            return newnode
 
-    def visit_typevartuple(
-        self, node: ast.TypeVarTuple, parent: nodes.NodeNG
-    ) -> nodes.TypeVarTuple:
-        """Visit a TypeVarTuple node by returning a fresh instance of it."""
-        newnode = nodes.TypeVarTuple(
-            lineno=node.lineno,
-            col_offset=node.col_offset,
-            end_lineno=node.end_lineno,
-            end_col_offset=node.end_col_offset,
-            parent=parent,
-        )
-        # Add AssignName node for 'node.name'
-        # https://bugs.python.org/issue43994
-        newnode.postinit(
-            name=self.visit_assignname(node, newnode, node.name),
-            default_value=(
-                self.visit(node.default_value, newnode) if PY313_PLUS else None
-            ),
-        )
-        return newnode
+        def visit_typevar(
+            self, node: ast.TypeVar, parent: nodes.NodeNG
+        ) -> nodes.TypeVar:
+            """Visit a TypeVar node by returning a fresh instance of it."""
+            newnode = nodes.TypeVar(
+                lineno=node.lineno,
+                col_offset=node.col_offset,
+                end_lineno=node.end_lineno,
+                end_col_offset=node.end_col_offset,
+                parent=parent,
+            )
+            # Add AssignName node for 'node.name'
+            # https://bugs.python.org/issue43994
+            newnode.postinit(
+                name=self.visit_assignname(node, newnode, node.name),
+                bound=self.visit(node.bound, newnode),
+                default_value=(
+                    self.visit(node.default_value, newnode) if PY313_PLUS else None
+                ),
+            )
+            return newnode
+
+        def visit_typevartuple(
+            self, node: ast.TypeVarTuple, parent: nodes.NodeNG
+        ) -> nodes.TypeVarTuple:
+            """Visit a TypeVarTuple node by returning a fresh instance of it."""
+            newnode = nodes.TypeVarTuple(
+                lineno=node.lineno,
+                col_offset=node.col_offset,
+                end_lineno=node.end_lineno,
+                end_col_offset=node.end_col_offset,
+                parent=parent,
+            )
+            # Add AssignName node for 'node.name'
+            # https://bugs.python.org/issue43994
+            newnode.postinit(
+                name=self.visit_assignname(node, newnode, node.name),
+                default_value=(
+                    self.visit(node.default_value, newnode) if PY313_PLUS else None
+                ),
+            )
+            return newnode
 
     def visit_unaryop(self, node: ast.UnaryOp, parent: nodes.NodeNG) -> nodes.UnaryOp:
         """Visit a UnaryOp node by returning a fresh instance of it."""
