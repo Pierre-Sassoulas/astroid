@@ -25,7 +25,7 @@ from astroid.exceptions import AttributeInferenceError
 if TYPE_CHECKING:
     from astroid import bases
     from astroid.context import InferenceContext
-    from astroid.typing import InferenceResult
+    from astroid.typing import InferenceResult, SuccessfulInferenceResult
 
 
 def _drop_overloads(values: list[InferenceResult]) -> list[InferenceResult]:
@@ -62,7 +62,9 @@ def _lookup_in_mro(
 
 
 def lookup(
-    node: nodes.NodeNG, name: str, context: InferenceContext | None = None
+    node: SuccessfulInferenceResult,
+    name: str,
+    context: InferenceContext | None = None,
 ) -> list[InferenceResult]:
     """Lookup the given special method name in the given *node*.
 
