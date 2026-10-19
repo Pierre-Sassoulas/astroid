@@ -309,12 +309,15 @@ def object_len(
         raise InferenceError(node=node)
 
     try:
-        len_call = next(node_type.igetattr("__len__", context=context))
+        # A type is a class (or a metaclass), which has igetattr and pytype
+        len_call = next(
+            node_type.igetattr("__len__", context=context)  # type: ignore[union-attr]
+        )
     except StopIteration as e:
         raise AstroidTypeError(str(e)) from e
     except AttributeInferenceError as e:
         raise AstroidTypeError(
-            f"object of type '{node_type.pytype()}' has no len()"
+            f"object of type '{node_type.pytype()}' has no len()"  # type: ignore[union-attr]
         ) from e
 
     inferred = len_call.infer_call_result(node, context)
