@@ -74,12 +74,11 @@ def infer_pattern_match(
     For PY39+ add `__class_getitem__`.
     """
     # _looks_like_pattern_or_match() checked that the call is the value of
-    # an assignment to one name, in a module parsed from source.
+    # an assignment to one name.
     assign = node.parent
     assert isinstance(assign, nodes.Assign)
     target = assign.targets[0]
     assert isinstance(target, nodes.AssignName)
-    assert node.lineno is not None and node.col_offset is not None
     class_def = nodes.ClassDef(
         name=target.name,
         lineno=node.lineno,

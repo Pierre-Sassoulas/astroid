@@ -170,8 +170,6 @@ def infer_func_form(
         # also requires from a namedtuple typename.
         raise UseInferenceDefault
     # we want to return a Class node instance with proper attributes set
-    # The call comes from parsed source, so it has a position.
-    assert node.lineno is not None and node.col_offset is not None
     class_node = nodes.ClassDef(
         name,
         lineno=node.lineno,

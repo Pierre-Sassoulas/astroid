@@ -21,8 +21,6 @@ def infer_namespace(
         # Cannot make sense of it.
         raise UseInferenceDefault()
 
-    # The call comes from parsed source, so it has a position.
-    assert node.lineno is not None and node.col_offset is not None
     class_node = nodes.ClassDef(
         "Namespace",
         lineno=node.lineno,
