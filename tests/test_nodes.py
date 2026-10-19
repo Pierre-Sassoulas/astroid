@@ -40,6 +40,7 @@ from astroid.const import (
 from astroid.context import InferenceContext
 from astroid.exceptions import (
     AstroidBuildingError,
+    AstroidIndexError,
     AstroidSyntaxError,
     AstroidTypeError,
     AttributeInferenceError,
@@ -2524,3 +2525,12 @@ def test_self_inferring_nodes_have_a_type() -> None:
         ]
 
     assert not missing
+
+
+def test_dict_getitem_missing_key_error_message() -> None:
+    """The error for a missing key can be turned into a string."""
+    node = extract_node("{1: 2}")
+    index = extract_node("3")
+    with pytest.raises(AstroidIndexError) as excinfo:
+        node.getitem(index)
+    assert str(excinfo.value).startswith("Key <Const.int")
