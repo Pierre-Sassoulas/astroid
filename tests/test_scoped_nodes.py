@@ -1788,6 +1788,11 @@ class ClassNodeTest(ModuleLoader, unittest.TestCase):
             ["CustomPdb", "PatchedPdb", "Pdb", "Bdb", "Cmd", "object"],
         )
 
+    def test_mro_class_based_on_itself(self) -> None:
+        """A base that only infers to the class itself is skipped."""
+        cls = builder.extract_node("class A(A): pass")
+        self.assertEqualMro(cls, ["A"])
+
     def test_mro_with_factories(self) -> None:
         cls = builder.extract_node("""
         def MixinFactory(cls):
