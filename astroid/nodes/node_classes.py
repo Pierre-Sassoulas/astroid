@@ -1430,7 +1430,9 @@ class AugAssign(
         rhs_iter = self.value.infer(context=rhs_context)
 
         for lhs, rhs in itertools.product(lhs_iter, rhs_iter):
-            if any(isinstance(value, util.UninferableBase) for value in (rhs, lhs)):
+            if isinstance(rhs, util.UninferableBase) or isinstance(
+                lhs, util.UninferableBase
+            ):
                 # Don't know how to process this.
                 yield util.Uninferable
                 return
@@ -1549,7 +1551,9 @@ class BinOp(_base_nodes.OperatorNode):
         lhs_iter = left.infer(context=lhs_context)
         rhs_iter = right.infer(context=rhs_context)
         for lhs, rhs in itertools.product(lhs_iter, rhs_iter):
-            if any(isinstance(value, util.UninferableBase) for value in (rhs, lhs)):
+            if isinstance(rhs, util.UninferableBase) or isinstance(
+                lhs, util.UninferableBase
+            ):
                 # Don't know how to process this.
                 yield util.Uninferable
                 return
@@ -1999,8 +2003,12 @@ class Comprehension(NodeNG):
         return self
 
     def _get_filtered_stmts(
-        self, lookup_node, node, stmts, mystmt: _base_nodes.Statement | None
-    ):
+        self,
+        lookup_node: NodeNG,
+        node: NodeNG,
+        stmts: list[NodeNG],
+        mystmt: NodeNG | None,
+    ) -> tuple[list[NodeNG], bool]:
         """method used in filter_stmts"""
         if self is mystmt:
             if isinstance(lookup_node, (Const, Name)):

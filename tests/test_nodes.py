@@ -76,6 +76,10 @@ class AsStringTest(resources.SysPathSetup, unittest.TestCase):
         node = extract_node("def f():\n    return (1,)  #@\n")
         self.assertEqual(node.as_string(), "return (1, )")
 
+    def test_return_tuple_as_string(self) -> None:
+        node = extract_node("def f():\n    return 1, 2  #@\n")
+        self.assertEqual(node.as_string(), "return 1, 2")
+
     def test_super_object_as_string(self) -> None:
         node = extract_node("""
         class A:
@@ -2430,6 +2434,11 @@ def test_import_infer_name_without_name(code: str) -> None:
     """An import binds no name for a lookup without a name."""
     node = extract_node(code)
     assert node._infer_name(None, None) is None
+
+
+def test_child_sequence_of_single_child() -> None:
+    node = extract_node("if x: pass")
+    assert node.child_sequence(node.test) == [node.test]
 
 
 def test_infer_argument_sharing_vararg_name() -> None:

@@ -12,7 +12,7 @@ from __future__ import annotations
 import itertools
 from collections.abc import Callable, Generator, Iterator
 from functools import cached_property, lru_cache, partial
-from typing import TYPE_CHECKING, Any, ClassVar, TypeVar
+from typing import TYPE_CHECKING, ClassVar, TypeVar
 
 from astroid import bases, nodes, util
 from astroid.context import (
@@ -26,24 +26,24 @@ from astroid.exceptions import (
 )
 from astroid.interpreter import dunder_lookup
 from astroid.nodes.node_ng import NodeNG
-from astroid.typing import InferenceResult
+from astroid.typing import InferenceResult, SuccessfulInferenceResult
 
 if TYPE_CHECKING:
-    from astroid.nodes.node_classes import LocalsDictNodeNG
+    from astroid.nodes.scoped_nodes.mixin import LocalsDictNodeNG
 
     _OpNodeT = TypeVar("_OpNodeT", bound=nodes.AugAssign | nodes.BinOp)
 
     GetFlowFactory = Callable[
         [
-            InferenceResult,
+            SuccessfulInferenceResult,
             InferenceResult | None,
             _OpNodeT,
-            InferenceResult,
+            SuccessfulInferenceResult,
             InferenceResult | None,
             InferenceContext,
             InferenceContext,
         ],
-        list[partial[Generator[InferenceResult]]],
+        list[partial[Iterator[InferenceResult]]],
     ]
 
 
@@ -56,12 +56,13 @@ class Statement(NodeNG):
     is_statement = True
     """Whether this node indicates a statement."""
 
-    def next_sibling(self):
+    def next_sibling(self) -> NodeNG | None:
         """The next sibling statement node.
 
         :returns: The next sibling statement node.
         :rtype: NodeNG or None
         """
+        assert self.parent
         stmts = self.parent.child_sequence(self)
         index = stmts.index(self)
         try:
@@ -69,12 +70,13 @@ class Statement(NodeNG):
         except IndexError:
             return None
 
-    def previous_sibling(self):
+    def previous_sibling(self) -> NodeNG | None:
         """The previous sibling statement.
 
         :returns: The previous sibling statement node.
         :rtype: NodeNG or None
         """
+        assert self.parent
         stmts = self.parent.child_sequence(self)
         index = stmts.index(self)
         if index >= 1:
@@ -92,7 +94,13 @@ class NoChildrenNode(NodeNG):
 class FilterStmtsBaseNode(NodeNG):
     """Base node for statement filtering and assignment type."""
 
-    def _get_filtered_stmts(self, _, node, _stmts, mystmt: Statement | None):
+    def _get_filtered_stmts(
+        self,
+        _: NodeNG,
+        node: NodeNG,
+        _stmts: list[NodeNG],
+        mystmt: NodeNG | None,
+    ) -> tuple[list[NodeNG], bool]:
         """Method used in _filter_stmts to get statements and trigger break."""
         if self.statement() is mystmt:
             # original node's statement is the assignment, only keep
@@ -110,7 +118,13 @@ class AssignTypeNode(NodeNG):
     def assign_type(self):
         return self
 
-    def _get_filtered_stmts(self, lookup_node, node, _stmts, mystmt: Statement | None):
+    def _get_filtered_stmts(
+        self,
+        lookup_node: NodeNG,
+        node: NodeNG,
+        _stmts: list[NodeNG],
+        mystmt: NodeNG | None,
+    ) -> tuple[list[NodeNG], bool]:
         """Method used in filter_stmts."""
         if self is mystmt:
             return _stmts, True
@@ -210,24 +224,24 @@ class MultiLineBlockNode(NodeNG):
     _multi_line_block_fields: ClassVar[tuple[str, ...]] = ()
 
     @cached_property
-    def _multi_line_blocks(self):
+    def _multi_line_blocks(self) -> tuple[list[NodeNG], ...]:
         return tuple(getattr(self, field) for field in self._multi_line_block_fields)
 
-    def _get_return_nodes_skip_functions(self):
+    def _get_return_nodes_skip_functions(self) -> Iterator[nodes.Return]:
         for block in self._multi_line_blocks:
             for child_node in block:
                 if child_node.is_function:
                     continue
                 yield from child_node._get_return_nodes_skip_functions()
 
-    def _get_yield_nodes_skip_functions(self):
+    def _get_yield_nodes_skip_functions(self) -> Iterator[nodes.Yield]:
         for block in self._multi_line_blocks:
             for child_node in block:
                 if child_node.is_function:
                     continue
                 yield from child_node._get_yield_nodes_skip_functions()
 
-    def _get_yield_nodes_skip_lambdas(self):
+    def _get_yield_nodes_skip_lambdas(self) -> Iterator[nodes.Yield]:
         for block in self._multi_line_blocks:
             for child_node in block:
                 if child_node.is_lambda:
@@ -254,7 +268,7 @@ class MultiLineWithElseBlockNode(MultiLineBlockNode):
     """The contents of the ``else`` block."""
 
     @cached_property
-    def blockstart_tolineno(self):
+    def blockstart_tolineno(self) -> int | None:
         return self.lineno
 
     def block_range(self, lineno: int) -> tuple[int, int]:
@@ -314,7 +328,7 @@ class LookupMixIn(NodeNG):
         """
         return self.scope().scope_lookup(self, name)
 
-    def ilookup(self, name):
+    def ilookup(self, name: str) -> Generator[InferenceResult]:
         """Lookup the inferred values of the given variable.
 
         :param name: The variable name to find values for.
@@ -329,11 +343,11 @@ class LookupMixIn(NodeNG):
         return bases._infer_stmts(stmts, context, frame)
 
 
-def _reflected_name(name) -> str:
+def _reflected_name(name: str) -> str:
     return "__r" + name[2:]
 
 
-def _augmented_name(name) -> str:
+def _augmented_name(name: str) -> str:
     return "__i" + name[2:]
 
 
@@ -383,29 +397,32 @@ class OperatorNode(NodeNG):
                 yield result
 
     @staticmethod
-    def _is_not_implemented(const) -> bool:
+    def _is_not_implemented(const: InferenceResult) -> bool:
         """Check if the given const node is NotImplemented."""
         return isinstance(const, nodes.Const) and const.value is NotImplemented
 
     @staticmethod
     def _infer_old_style_string_formatting(
-        instance: nodes.Const, other: nodes.NodeNG, context: InferenceContext
-    ) -> tuple[util.UninferableBase | nodes.Const]:
+        instance: nodes.Const, other: InferenceResult, context: InferenceContext
+    ) -> tuple[InferenceResult]:
         """Infer the result of '"string" % ...'.
 
         TODO: Instead of returning Uninferable we should rely
         on the call to '%' to see if the result is actually uninferable.
         """
+        values: object
         if isinstance(other, nodes.Tuple):
             if util.Uninferable in other.elts:
                 return (util.Uninferable,)
             inferred_positional = [util.safe_infer(i, context) for i in other.elts]
-            if all(isinstance(i, nodes.Const) for i in inferred_positional):
-                values = tuple(i.value for i in inferred_positional)
+            consts = [i for i in inferred_positional if isinstance(i, nodes.Const)]
+            if len(consts) == len(inferred_positional):
+                values = tuple(i.value for i in consts)
             else:
                 values = None
         elif isinstance(other, nodes.Dict):
-            values: dict[Any, Any] = {}
+            values_dict: dict[object, object] = {}
+            values = values_dict  # pylint: disable=redefined-variable-type
             for pair in other.items:
                 key = util.safe_infer(pair[0], context)
                 if not isinstance(key, nodes.Const):
@@ -413,7 +430,7 @@ class OperatorNode(NodeNG):
                 value = util.safe_infer(pair[1], context)
                 if not isinstance(value, nodes.Const):
                     return (util.Uninferable,)
-                values[key.value] = value.value
+                values_dict[key.value] = value.value
         elif isinstance(other, nodes.Const):
             values = other.value
         else:
@@ -434,17 +451,19 @@ class OperatorNode(NodeNG):
 
     @staticmethod
     def _invoke_binop_inference(
-        instance: InferenceResult,
+        instance: SuccessfulInferenceResult,
         opnode: nodes.AugAssign | nodes.BinOp,
         op: str,
-        other: InferenceResult,
+        other: SuccessfulInferenceResult,
         context: InferenceContext,
         method_name: str,
-    ) -> Generator[InferenceResult]:
+    ) -> Iterator[InferenceResult]:
         """Invoke binary operation inference on the given instance."""
         methods = dunder_lookup.lookup(instance, method_name)
         context = bind_context_to_node(context, instance)
         method = methods[0]
+        # _get_binop_contexts gave the context a call context
+        assert context.callcontext is not None
         context.callcontext.callee = method
 
         if (
@@ -473,13 +492,13 @@ class OperatorNode(NodeNG):
 
     @staticmethod
     def _aug_op(
-        instance: InferenceResult,
+        instance: SuccessfulInferenceResult,
         opnode: nodes.AugAssign,
         op: str,
-        other: InferenceResult,
+        other: SuccessfulInferenceResult,
         context: InferenceContext,
         reverse: bool = False,
-    ) -> partial[Generator[InferenceResult]]:
+    ) -> partial[Iterator[InferenceResult]]:
         """Get an inference callable for an augmented binary operation."""
         method_name = AUGMENTED_OP_METHOD[op]
         return partial(
@@ -494,13 +513,13 @@ class OperatorNode(NodeNG):
 
     @staticmethod
     def _bin_op(
-        instance: InferenceResult,
+        instance: SuccessfulInferenceResult,
         opnode: nodes.AugAssign | nodes.BinOp,
         op: str,
-        other: InferenceResult,
+        other: SuccessfulInferenceResult,
         context: InferenceContext,
         reverse: bool = False,
-    ) -> partial[Generator[InferenceResult]]:
+    ) -> partial[Iterator[InferenceResult]]:
         """Get an inference callable for a normal binary operation.
 
         If *reverse* is True, then the reflected method will be used instead.
@@ -523,12 +542,16 @@ class OperatorNode(NodeNG):
     def _bin_op_or_union_type(
         left: bases.UnionType | nodes.ClassDef | nodes.Const,
         right: bases.UnionType | nodes.ClassDef | nodes.Const,
-    ) -> Generator[InferenceResult]:
+    ) -> Iterator[InferenceResult]:
         """Create a new UnionType instance for binary or, e.g. int | str."""
         yield bases.UnionType(left, right)
 
     @staticmethod
-    def _get_binop_contexts(context, left, right):
+    def _get_binop_contexts(
+        context: InferenceContext,
+        left: SuccessfulInferenceResult,
+        right: SuccessfulInferenceResult,
+    ) -> Iterator[InferenceContext]:
         """Get contexts for binary operations.
 
         This will return two inference contexts, the first one
@@ -550,14 +573,14 @@ class OperatorNode(NodeNG):
 
     @staticmethod
     def _get_aug_flow(
-        left: InferenceResult,
+        left: SuccessfulInferenceResult,
         left_type: InferenceResult | None,
         aug_opnode: nodes.AugAssign,
-        right: InferenceResult,
+        right: SuccessfulInferenceResult,
         right_type: InferenceResult | None,
         context: InferenceContext,
         reverse_context: InferenceContext,
-    ) -> list[partial[Generator[InferenceResult]]]:
+    ) -> list[partial[Iterator[InferenceResult]]]:
         """Get the flow for augmented binary operations.
 
         The rules are a bit messy:
@@ -607,14 +630,14 @@ class OperatorNode(NodeNG):
 
     @staticmethod
     def _get_binop_flow(
-        left: InferenceResult,
+        left: SuccessfulInferenceResult,
         left_type: InferenceResult | None,
         binary_opnode: nodes.AugAssign | nodes.BinOp,
-        right: InferenceResult,
+        right: SuccessfulInferenceResult,
         right_type: InferenceResult | None,
         context: InferenceContext,
         reverse_context: InferenceContext,
-    ) -> list[partial[Generator[InferenceResult]]]:
+    ) -> list[partial[Iterator[InferenceResult]]]:
         """Get the flow for binary operations.
 
         The rules are a bit messy:
@@ -668,8 +691,8 @@ class OperatorNode(NodeNG):
 
     @staticmethod
     def _infer_binary_operation(
-        left: InferenceResult,
-        right: InferenceResult,
+        left: SuccessfulInferenceResult,
+        right: SuccessfulInferenceResult,
         binary_opnode: _OpNodeT,
         context: InferenceContext,
         flow_factory: GetFlowFactory[_OpNodeT],
