@@ -6,18 +6,23 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+
 from astroid import nodes
 from astroid.brain.brain_numpy_utils import (
     numpy_supports_type_hints,
     numpy_version_2_or_later,
 )
-from astroid.builder import extract_node
+from astroid.builder import _extract_single_node
 from astroid.context import InferenceContext
 from astroid.inference_tip import inference_tip
 from astroid.manager import AstroidManager
+from astroid.typing import InferenceResult
 
 
-def infer_numpy_ndarray(node, context: InferenceContext | None = None):
+def infer_numpy_ndarray(
+    node: nodes.Attribute, context: InferenceContext | None = None
+) -> Iterator[InferenceResult]:
     ndarray = """
     class ndarray(object):
         def __init__(self, shape, dtype=float, buffer=None, offset=0,
@@ -158,8 +163,8 @@ def infer_numpy_ndarray(node, context: InferenceContext | None = None):
         device = str()
         def to_device(self, device): return np.ndarray([0, 0])
         """
-    node = extract_node(ndarray)
-    return node.infer(context=context)
+    class_node = _extract_single_node(ndarray)
+    return class_node.infer(context=context)
 
 
 def _looks_like_numpy_ndarray(node: nodes.Attribute) -> bool:

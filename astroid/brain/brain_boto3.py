@@ -4,7 +4,7 @@
 
 """Astroid hooks for understanding ``boto3.ServiceRequest()``."""
 
-from astroid.builder import extract_node
+from astroid.builder import _extract_single_node
 from astroid.manager import AstroidManager
 from astroid.nodes.scoped_nodes import ClassDef
 
@@ -17,7 +17,7 @@ def service_request_transform(node: ClassDef) -> ClassDef:
     def __getattr__(self, attr):
         return 0
     """
-    func_getattr = extract_node(code)
+    func_getattr = _extract_single_node(code)
     node.locals["__getattr__"] = [func_getattr]
     return node
 

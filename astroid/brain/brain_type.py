@@ -22,12 +22,15 @@ Thanks to Lukasz Langa for fruitful discussion.
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+
 from astroid import nodes
-from astroid.builder import extract_node
+from astroid.builder import _extract_single_node
 from astroid.context import InferenceContext
 from astroid.exceptions import UseInferenceDefault
 from astroid.inference_tip import inference_tip
 from astroid.manager import AstroidManager
+from astroid.typing import InferenceResult
 
 
 def _looks_like_type_subscript(node: nodes.Name) -> bool:
@@ -43,7 +46,9 @@ def _looks_like_type_subscript(node: nodes.Name) -> bool:
     return False
 
 
-def infer_type_sub(node, context: InferenceContext | None = None):
+def infer_type_sub(
+    node: nodes.Name, context: InferenceContext | None = None
+) -> Iterator[InferenceResult]:
     """
     Infer a type[...] subscript.
 
@@ -60,8 +65,8 @@ def infer_type_sub(node, context: InferenceContext | None = None):
         def __class_getitem__(cls, key):
             return cls
      """
-    node = extract_node(class_src)
-    return node.infer(context=context)
+    class_node = _extract_single_node(class_src)
+    return class_node.infer(context=context)
 
 
 def register(manager: AstroidManager) -> None:
