@@ -52,7 +52,7 @@ if TYPE_CHECKING:
     from astroid.nodes.node_ng import FrameType
 
 
-def _is_const(value) -> bool:
+def _is_const(value: object) -> bool:
     return isinstance(value, tuple(CONST_CLS))
 
 
@@ -186,7 +186,9 @@ def are_exclusive(stmt1, stmt2, exceptions: list[str] | None = None) -> bool:
 _SLICE_SENTINEL = object()
 
 
-def _slice_value(index, context: InferenceContext | None = None):
+def _slice_value(
+    index: NodeNG | None, context: InferenceContext | None = None
+) -> object:
     """Get the value of the given slice index."""
 
     if isinstance(index, Const):
@@ -213,7 +215,9 @@ def _slice_value(index, context: InferenceContext | None = None):
     return _SLICE_SENTINEL
 
 
-def _infer_slice(node, context: InferenceContext | None = None):
+def _infer_slice(
+    node: Slice, context: InferenceContext | None = None
+) -> slice[object, object, object]:
     lower = _slice_value(node.lower, context)
     upper = _slice_value(node.upper, context)
     step = _slice_value(node.step, context)
@@ -228,7 +232,12 @@ def _infer_slice(node, context: InferenceContext | None = None):
     )
 
 
-def _container_getitem(instance, elts, index, context: InferenceContext | None = None):
+def _container_getitem(
+    instance: List | Tuple,
+    elts: list[SuccessfulInferenceResult],
+    index: NodeNG,
+    context: InferenceContext | None = None,
+) -> SuccessfulInferenceResult:
     """Get a slice or an item, using the given *index*, for the given sequence."""
     try:
         if isinstance(index, Slice):
@@ -1780,7 +1789,9 @@ class Call(NodeNG):
                 continue
         return InferenceErrorInfo(node=self, context=context)
 
-    def _populate_context_lookup(self, context: InferenceContext | None):
+    def _populate_context_lookup(
+        self, context: InferenceContext | None
+    ) -> dict[InferenceResult, InferenceContext]:
         """Allows context to be saved for later for inference inside a function."""
         context_lookup: dict[InferenceResult, InferenceContext] = {}
         if context is None:
@@ -2666,7 +2677,7 @@ class ExceptHandler(
         yield from self.body
 
     @cached_property
-    def blockstart_tolineno(self):
+    def blockstart_tolineno(self) -> int | None:
         """The line on which the beginning of this block ends.
 
         :type: int
@@ -2745,7 +2756,7 @@ class For(
     """
 
     @cached_property
-    def blockstart_tolineno(self):
+    def blockstart_tolineno(self) -> int:
         """The line on which the beginning of this block ends.
 
         :type: int
@@ -3004,7 +3015,9 @@ class Global(_base_nodes.NoChildrenNode, _base_nodes.Statement):
             parent=parent,
         )
 
-    def _infer_name(self, frame, name):
+    def _infer_name(
+        self, frame: NodeNG | BaseInstance | None, name: str | None
+    ) -> str | None:
         return name
 
     @decorators.raise_if_nothing_inferred
@@ -3050,7 +3063,7 @@ class If(_base_nodes.MultiLineWithElseBlockNode, _base_nodes.Statement):
         self.orelse = orelse
 
     @cached_property
-    def blockstart_tolineno(self):
+    def blockstart_tolineno(self) -> int:
         """The line on which the beginning of this block ends.
 
         :type: int
@@ -3400,7 +3413,9 @@ class Nonlocal(_base_nodes.NoChildrenNode, _base_nodes.Statement):
             parent=parent,
         )
 
-    def _infer_name(self, frame, name):
+    def _infer_name(
+        self, frame: NodeNG | BaseInstance | None, name: str | None
+    ) -> str | None:
         return name
 
 
@@ -3918,7 +3933,9 @@ class Try(_base_nodes.MultiLineWithElseBlockNode, _base_nodes.Statement):
         self.orelse = orelse
         self.finalbody = finalbody
 
-    def _infer_name(self, frame, name):
+    def _infer_name(
+        self, frame: NodeNG | BaseInstance | None, name: str | None
+    ) -> str | None:
         return name
 
     def block_range(self, lineno: int) -> tuple[int, int]:
@@ -4012,7 +4029,9 @@ class TryStar(_base_nodes.MultiLineWithElseBlockNode, _base_nodes.Statement):
         if finalbody:
             self.finalbody = finalbody
 
-    def _infer_name(self, frame, name):
+    def _infer_name(
+        self, frame: NodeNG | BaseInstance | None, name: str | None
+    ) -> str | None:
         return name
 
     def get_children(self) -> Iterator[NodeNG]:
@@ -4495,7 +4514,7 @@ class While(_base_nodes.MultiLineWithElseBlockNode, _base_nodes.Statement):
         self.orelse = orelse
 
     @cached_property
-    def blockstart_tolineno(self):
+    def blockstart_tolineno(self) -> int:
         """The line on which the beginning of this block ends.
 
         :type: int
@@ -4603,7 +4622,7 @@ class With(
     """
 
     @cached_property
-    def blockstart_tolineno(self):
+    def blockstart_tolineno(self) -> int:
         """The line on which the beginning of this block ends.
 
         :type: int
