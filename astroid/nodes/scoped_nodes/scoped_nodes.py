@@ -1450,14 +1450,17 @@ class FunctionDef(
             and isinstance(self.parent.frame(), ClassDef)
         )
 
-    def decoratornames(self, context: InferenceContext | None = None) -> set[str]:
+    def decoratornames(
+        self, context: InferenceContext | None = None
+    ) -> set[str | util.UninferableBase]:
         """Get the qualified names of each of the decorators on this function.
 
         :param context:
             An inference context that can be passed to inference functions
-        :returns: The names of the decorators.
+        :returns: The names of the decorators, with Uninferable for a decorator
+            that infers to Uninferable.
         """
-        result = set()
+        result: set[str | util.UninferableBase] = set()
         decoratornodes = []
         if self.decorators is not None:
             decoratornodes += self.decorators.nodes
