@@ -624,9 +624,9 @@ class GeneratorExp(ComprehensionScope):
 
     def __init__(
         self,
-        lineno: int,
-        col_offset: int,
-        parent: NodeNG,
+        lineno: int | None,
+        col_offset: int | None,
+        parent: NodeNG | None,
         *,
         end_lineno: int | None,
         end_col_offset: int | None,
@@ -682,9 +682,9 @@ class DictComp(ComprehensionScope):
 
     def __init__(
         self,
-        lineno: int,
-        col_offset: int,
-        parent: NodeNG,
+        lineno: int | None,
+        col_offset: int | None,
+        parent: NodeNG | None,
         *,
         end_lineno: int | None,
         end_col_offset: int | None,
@@ -739,9 +739,9 @@ class SetComp(ComprehensionScope):
 
     def __init__(
         self,
-        lineno: int,
-        col_offset: int,
-        parent: NodeNG,
+        lineno: int | None,
+        col_offset: int | None,
+        parent: NodeNG | None,
         *,
         end_lineno: int | None,
         end_col_offset: int | None,
@@ -796,9 +796,9 @@ class ListComp(ComprehensionScope):
 
     def __init__(
         self,
-        lineno: int,
-        col_offset: int,
-        parent: NodeNG,
+        lineno: int | None,
+        col_offset: int | None,
+        parent: NodeNG | None,
         *,
         end_lineno: int | None,
         end_col_offset: int | None,
@@ -911,9 +911,9 @@ class Lambda(_base_nodes.FilterStmtsBaseNode, LocalsDictNodeNG):
 
     def __init__(
         self,
-        lineno: int,
-        col_offset: int,
-        parent: NodeNG,
+        lineno: int | None,
+        col_offset: int | None,
+        parent: NodeNG | None,
         *,
         end_lineno: int | None,
         end_col_offset: int | None,
@@ -1133,9 +1133,9 @@ class FunctionDef(
     def __init__(
         self,
         name: str,
-        lineno: int,
-        col_offset: int,
-        parent: NodeNG,
+        lineno: int | None,
+        col_offset: int | None,
+        parent: NodeNG | None,
         *,
         end_lineno: int | None,
         end_col_offset: int | None,
@@ -1901,9 +1901,9 @@ class ClassDef(
     def __init__(
         self,
         name: str,
-        lineno: int,
-        col_offset: int,
-        parent: NodeNG,
+        lineno: int | None,
+        col_offset: int | None,
+        parent: NodeNG | None,
         *,
         end_lineno: int | None,
         end_col_offset: int | None,

@@ -410,9 +410,9 @@ class AssignName(
     def __init__(
         self,
         name: str,
-        lineno: int,
-        col_offset: int,
-        parent: NodeNG,
+        lineno: int | None,
+        col_offset: int | None,
+        parent: NodeNG | None,
         *,
         end_lineno: int | None,
         end_col_offset: int | None,
@@ -497,9 +497,9 @@ class DelName(
     def __init__(
         self,
         name: str,
-        lineno: int,
-        col_offset: int,
-        parent: NodeNG,
+        lineno: int | None,
+        col_offset: int | None,
+        parent: NodeNG | None,
         *,
         end_lineno: int | None,
         end_col_offset: int | None,
@@ -537,9 +537,9 @@ class Name(_base_nodes.LookupMixIn, _base_nodes.NoChildrenNode):
     def __init__(
         self,
         name: str,
-        lineno: int,
-        col_offset: int,
-        parent: NodeNG,
+        lineno: int | None,
+        col_offset: int | None,
+        parent: NodeNG | None,
         *,
         end_lineno: int | None,
         end_col_offset: int | None,
@@ -702,7 +702,7 @@ class Arguments(
         self,
         vararg: str | None,
         kwarg: str | None,
-        parent: NodeNG,
+        parent: NodeNG | None,
         vararg_node: AssignName | None = None,
         kwarg_node: AssignName | None = None,
     ) -> None:
@@ -1133,9 +1133,9 @@ class AssignAttr(_base_nodes.LookupMixIn, _base_nodes.ParentAssignNode):
     def __init__(
         self,
         attrname: str,
-        lineno: int,
-        col_offset: int,
-        parent: NodeNG,
+        lineno: int | None,
+        col_offset: int | None,
+        parent: NodeNG | None,
         *,
         end_lineno: int | None,
         end_col_offset: int | None,
@@ -1345,9 +1345,9 @@ class AugAssign(
     def __init__(
         self,
         op: str,
-        lineno: int,
-        col_offset: int,
-        parent: NodeNG,
+        lineno: int | None,
+        col_offset: int | None,
+        parent: NodeNG | None,
         *,
         end_lineno: int | None,
         end_col_offset: int | None,
@@ -1471,9 +1471,9 @@ class BinOp(_base_nodes.OperatorNode):
     def __init__(
         self,
         op: str,
-        lineno: int,
-        col_offset: int,
-        parent: NodeNG,
+        lineno: int | None,
+        col_offset: int | None,
+        parent: NodeNG | None,
         *,
         end_lineno: int | None,
         end_col_offset: int | None,
@@ -2035,7 +2035,7 @@ class Const(_base_nodes.NoChildrenNode, Instance):
         value: Any,
         lineno: int | None = None,
         col_offset: int | None = None,
-        parent: NodeNG = SYNTHETIC_ROOT,
+        parent: NodeNG | None = SYNTHETIC_ROOT,
         kind: str | None = None,
         *,
         end_lineno: int | None = None,
@@ -2266,9 +2266,9 @@ class DelAttr(_base_nodes.ParentAssignNode):
     def __init__(
         self,
         attrname: str,
-        lineno: int,
-        col_offset: int,
-        parent: NodeNG,
+        lineno: int | None,
+        col_offset: int | None,
+        parent: NodeNG | None,
         *,
         end_lineno: int | None,
         end_col_offset: int | None,
@@ -2306,9 +2306,9 @@ class Delete(_base_nodes.AssignTypeNode, _base_nodes.Statement):
 
     def __init__(
         self,
-        lineno: int,
-        col_offset: int,
-        parent: NodeNG,
+        lineno: int | None,
+        col_offset: int | None,
+        parent: NodeNG | None,
         *,
         end_lineno: int | None,
         end_col_offset: int | None,
@@ -2558,12 +2558,12 @@ class EmptyNode(_base_nodes.NoChildrenNode):
 
     def __init__(
         self,
-        lineno: None = None,
-        col_offset: None = None,
-        parent: NodeNG = SYNTHETIC_ROOT,
+        lineno: int | None = None,
+        col_offset: int | None = None,
+        parent: NodeNG | None = SYNTHETIC_ROOT,
         *,
-        end_lineno: None = None,
-        end_col_offset: None = None,
+        end_lineno: int | None = None,
+        end_col_offset: int | None = None,
     ) -> None:
         super().__init__(
             lineno=lineno,
@@ -2908,9 +2908,9 @@ class Attribute(NodeNG):
     def __init__(
         self,
         attrname: str,
-        lineno: int,
-        col_offset: int,
-        parent: NodeNG,
+        lineno: int | None,
+        col_offset: int | None,
+        parent: NodeNG | None,
         *,
         end_lineno: int | None,
         end_col_offset: int | None,
@@ -3237,7 +3237,7 @@ class Keyword(NodeNG):
         arg: str | None,
         lineno: int | None,
         col_offset: int | None,
-        parent: NodeNG,
+        parent: NodeNG | None,
         *,
         end_lineno: int | None,
         end_col_offset: int | None,
@@ -3402,12 +3402,12 @@ class ParamSpec(_base_nodes.AssignTypeNode):
 
     def __init__(
         self,
-        lineno: int,
-        col_offset: int,
-        parent: NodeNG,
+        lineno: int | None,
+        col_offset: int | None,
+        parent: NodeNG | None,
         *,
-        end_lineno: int,
-        end_col_offset: int,
+        end_lineno: int | None,
+        end_col_offset: int | None,
     ) -> None:
         super().__init__(
             lineno=lineno,
@@ -3664,9 +3664,9 @@ class Starred(_base_nodes.ParentAssignNode):
     def __init__(
         self,
         ctx: Context,
-        lineno: int,
-        col_offset: int,
-        parent: NodeNG,
+        lineno: int | None,
+        col_offset: int | None,
+        parent: NodeNG | None,
         *,
         end_lineno: int | None,
         end_col_offset: int | None,
@@ -3716,9 +3716,9 @@ class Subscript(NodeNG):
     def __init__(
         self,
         ctx: Context,
-        lineno: int,
-        col_offset: int,
-        parent: NodeNG,
+        lineno: int | None,
+        col_offset: int | None,
+        parent: NodeNG | None,
         *,
         end_lineno: int | None,
         end_col_offset: int | None,
@@ -3834,11 +3834,11 @@ class Try(_base_nodes.MultiLineWithElseBlockNode, _base_nodes.Statement):
     def __init__(
         self,
         *,
-        lineno: int,
-        col_offset: int,
-        end_lineno: int,
-        end_col_offset: int,
-        parent: NodeNG,
+        lineno: int | None,
+        col_offset: int | None,
+        end_lineno: int | None,
+        end_col_offset: int | None,
+        parent: NodeNG | None,
     ) -> None:
         """
         :param lineno: The line that this node appears on in the source code.
@@ -4105,12 +4105,12 @@ class TypeAlias(_base_nodes.AssignTypeNode, _base_nodes.Statement):
 
     def __init__(
         self,
-        lineno: int,
-        col_offset: int,
-        parent: NodeNG,
+        lineno: int | None,
+        col_offset: int | None,
+        parent: NodeNG | None,
         *,
-        end_lineno: int,
-        end_col_offset: int,
+        end_lineno: int | None,
+        end_col_offset: int | None,
     ) -> None:
         super().__init__(
             lineno=lineno,
@@ -4177,12 +4177,12 @@ class TypeVar(_base_nodes.AssignTypeNode):
 
     def __init__(
         self,
-        lineno: int,
-        col_offset: int,
-        parent: NodeNG,
+        lineno: int | None,
+        col_offset: int | None,
+        parent: NodeNG | None,
         *,
-        end_lineno: int,
-        end_col_offset: int,
+        end_lineno: int | None,
+        end_col_offset: int | None,
     ) -> None:
         super().__init__(
             lineno=lineno,
@@ -4241,12 +4241,12 @@ class TypeVarTuple(_base_nodes.AssignTypeNode):
 
     def __init__(
         self,
-        lineno: int,
-        col_offset: int,
-        parent: NodeNG,
+        lineno: int | None,
+        col_offset: int | None,
+        parent: NodeNG | None,
         *,
-        end_lineno: int,
-        end_col_offset: int,
+        end_lineno: int | None,
+        end_col_offset: int | None,
     ) -> None:
         super().__init__(
             lineno=lineno,
@@ -4313,9 +4313,9 @@ class UnaryOp(_base_nodes.OperatorNode):
     def __init__(
         self,
         op: str,
-        lineno: int,
-        col_offset: int,
-        parent: NodeNG,
+        lineno: int | None,
+        col_offset: int | None,
+        parent: NodeNG | None,
         *,
         end_lineno: int | None,
         end_col_offset: int | None,
@@ -5024,12 +5024,12 @@ class Unknown(_base_nodes.AssignTypeNode):
 
     def __init__(
         self,
-        parent: NodeNG,
-        lineno: None = None,
-        col_offset: None = None,
+        parent: NodeNG | None,
+        lineno: int | None = None,
+        col_offset: int | None = None,
         *,
-        end_lineno: None = None,
-        end_col_offset: None = None,
+        end_lineno: int | None = None,
+        end_col_offset: int | None = None,
     ) -> None:
         super().__init__(
             lineno=lineno,
