@@ -1511,7 +1511,7 @@ class BinOp(_base_nodes.OperatorNode):
 
         If any inferred result is uninferable, an empty list is returned.
         """
-        bad = []
+        bad: list[util.BadBinaryOperationMessage] = []
         try:
             for result in self._infer_binop(context=context):
                 if result is util.Uninferable:
@@ -1535,7 +1535,7 @@ class BinOp(_base_nodes.OperatorNode):
 
     def _infer_binop(
         self, context: InferenceContext | None = None
-    ) -> Generator[InferenceResult]:
+    ) -> Generator[InferenceResult | util.BadBinaryOperationMessage]:
         """Binary operation inference logic."""
         left = self.left
         right = self.right
@@ -3596,8 +3596,13 @@ class Slice(NodeNG):
 
     @cached_property
     def _proxied(self) -> nodes.ClassDef:
+        # pylint: disable-next=import-outside-toplevel
+        from astroid.nodes import ClassDef
+
         builtins = AstroidManager().builtins_module
-        return builtins.getattr("slice")[0]
+        slice_class = builtins.getattr("slice")[0]
+        assert isinstance(slice_class, ClassDef)
+        return slice_class
 
     def pytype(self) -> Literal["builtins.slice"]:
         """Get the name of the type that this node represents.
@@ -4375,9 +4380,7 @@ class UnaryOp(_base_nodes.OperatorNode):
 
     def _infer_unaryop(
         self, context: InferenceContext | None = None
-    ) -> Generator[
-        InferenceResult | util.BadUnaryOperationMessage, None, InferenceErrorInfo
-    ]:
+    ) -> Generator[InferenceResult | util.BadUnaryOperationMessage]:
         """Infer what an UnaryOp should return when evaluated."""
         from astroid.nodes import ClassDef  # pylint: disable=import-outside-toplevel
 

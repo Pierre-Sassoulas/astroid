@@ -12,7 +12,7 @@ from __future__ import annotations
 import itertools
 from collections.abc import Callable, Generator, Iterator
 from functools import cached_property, lru_cache, partial
-from typing import TYPE_CHECKING, Any, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar, TypeVar
 
 from astroid import bases, nodes, util
 from astroid.context import (
@@ -31,11 +31,13 @@ from astroid.typing import InferenceResult
 if TYPE_CHECKING:
     from astroid.nodes.node_classes import LocalsDictNodeNG
 
+    _OpNodeT = TypeVar("_OpNodeT", bound=nodes.AugAssign | nodes.BinOp)
+
     GetFlowFactory = Callable[
         [
             InferenceResult,
             InferenceResult | None,
-            nodes.AugAssign | nodes.BinOp,
+            _OpNodeT,
             InferenceResult,
             InferenceResult | None,
             InferenceContext,
@@ -371,6 +373,8 @@ class OperatorNode(NodeNG):
                 # which shows that we can't infer the result.
                 yield util.Uninferable
             else:
+                # infer_callable only yields operation errors of type ``error``
+                assert not isinstance(result, util.BadOperationMessage)
                 yield result
 
     @staticmethod
@@ -661,9 +665,9 @@ class OperatorNode(NodeNG):
     def _infer_binary_operation(
         left: InferenceResult,
         right: InferenceResult,
-        binary_opnode: nodes.AugAssign | nodes.BinOp,
+        binary_opnode: _OpNodeT,
         context: InferenceContext,
-        flow_factory: GetFlowFactory,
+        flow_factory: GetFlowFactory[_OpNodeT],
     ) -> Generator[InferenceResult | util.BadBinaryOperationMessage]:
         """Infer a binary operation between a left operand and a right operand.
 
