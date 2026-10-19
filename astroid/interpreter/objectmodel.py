@@ -317,9 +317,12 @@ class BaseFunctionModel(ObjectModel[_FunctionT_co]):
 
     @property
     def attr___doc__(self):
+        func = self._instance
+        # A lambda has no docstring.
+        doc_node = None if isinstance(func, nodes.Lambda) else func.doc_node
         return node_classes.Const(
-            value=getattr(self._instance.doc_node, "value", None),
-            parent=self._instance,
+            value=getattr(doc_node, "value", None),
+            parent=func,
         )
 
     @property
@@ -352,7 +355,8 @@ class BaseFunctionModel(ObjectModel[_FunctionT_co]):
             end_col_offset=self._instance.end_col_offset,
         )
 
-        if not self._instance.returns:
+        # A lambda cannot annotate its return.
+        if isinstance(self._instance, nodes.Lambda) or not self._instance.returns:
             returns = None
         else:
             returns = self._instance.returns
