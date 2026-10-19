@@ -17,7 +17,7 @@ from functools import cached_property
 from typing import TYPE_CHECKING, Any, ClassVar, Literal, Self, Union
 
 from astroid import decorators, protocols, util
-from astroid.bases import Instance, _infer_stmts
+from astroid.bases import BaseInstance, Instance, Proxy, _infer_stmts
 from astroid.const import _EMPTY_OBJECT_MARKER, PY314_PLUS, Context
 from astroid.context import CallContext, InferenceContext, copy_context
 from astroid.exceptions import (
@@ -360,6 +360,8 @@ class BaseContainer(_base_nodes.ParentAssignNode, Instance, metaclass=abc.ABCMet
 
         for elt in self.elts:
             if isinstance(elt, Starred):
+                from astroid import objects  # pylint: disable=import-outside-toplevel
+
                 starred = util.safe_infer(elt.value, context)
                 if not starred:
                     raise InferenceError(node=self, context=context)
@@ -367,7 +369,15 @@ class BaseContainer(_base_nodes.ParentAssignNode, Instance, metaclass=abc.ABCMet
                     # TypeVarTuple unpacking (*Ts) represents a variadic
                     # type parameter, not an iterable to expand.
                     values.append(elt)
-                elif not hasattr(starred, "elts"):
+                elif not isinstance(
+                    starred,
+                    (
+                        BaseContainer,
+                        objects.DictItems,
+                        objects.DictKeys,
+                        objects.DictValues,
+                    ),
+                ):
                     raise InferenceError(node=self, context=context)
                 else:
                     # TODO: fresh context?
@@ -1080,12 +1090,18 @@ def _infer_attribute(
 ) -> Generator[InferenceResult, None, InferenceErrorInfo]:
     """Infer an AssignAttr/Attribute node by using getattr on the associated object."""
     # pylint: disable=import-outside-toplevel
+    from astroid import objects
     from astroid.constraint import get_constraints
-    from astroid.nodes import ClassDef
+    from astroid.nodes import ClassDef, FunctionDef, Module
 
     for owner in node.expr.infer(context):
         if isinstance(owner, util.UninferableBase):
             yield owner
+            continue
+        if not isinstance(
+            owner, (Proxy, ClassDef, FunctionDef, Module, Slice, objects.Super)
+        ):
+            # This kind of value has no ``igetattr``, e.g. a ``Lambda``.
             continue
 
         context = copy_context(context)
@@ -1095,7 +1111,11 @@ def _infer_attribute(
             if isinstance(owner, (ClassDef, Instance)):
                 frame = owner if isinstance(owner, ClassDef) else owner._proxied
                 context.constraints[node.attrname] = get_constraints(node, frame=frame)
-            if node.attrname == "argv" and owner.name == "sys":
+            if (
+                node.attrname == "argv"
+                and isinstance(owner, Module)
+                and owner.name == "sys"
+            ):
                 # sys.argv will never be inferable during static analysis
                 # It's value would be the args passed to the linter itself
                 yield util.Uninferable
@@ -1104,6 +1124,10 @@ def _infer_attribute(
         except (
             AttributeInferenceError,
             InferenceError,
+            # Safety net, not a type check: a property getter is called with the
+            # instance as ``caller``, and some ``infer_call_result``
+            # implementations read ``caller.args`` unguarded, e.g. a
+            # ``with_metaclass`` function used as a property getter.
             AttributeError,
         ):
             pass
@@ -1747,6 +1771,9 @@ class Call(NodeNG):
         self, context: InferenceContext | None = None
     ) -> Generator[InferenceResult, None, InferenceErrorInfo]:
         """Infer a Call node by trying to guess what the function returns."""
+        # pylint: disable-next=import-outside-toplevel
+        from astroid.nodes import ClassDef, FunctionDef, Lambda
+
         callcontext = copy_context(context)
         callcontext.boundnode = None
         if context is not None:
@@ -1757,7 +1784,7 @@ class Call(NodeNG):
                 yield callee
                 continue
             try:
-                if hasattr(callee, "infer_call_result"):
+                if isinstance(callee, (Proxy, ClassDef, FunctionDef, Lambda)):
                     callcontext.callcontext = CallContext(
                         args=self.args, keywords=self.keywords, callee=callee
                     )
@@ -3753,7 +3780,9 @@ class Subscript(NodeNG):
         to the value's `getitem` method, which should
         handle each supported index type accordingly.
         """
-        from astroid import helpers  # pylint: disable=import-outside-toplevel
+        # pylint: disable-next=import-outside-toplevel
+        from astroid import helpers, objects
+        from astroid.nodes import ClassDef  # pylint: disable=import-outside-toplevel
 
         found_one = False
         for value in self.value.infer(context):
@@ -3779,6 +3808,19 @@ class Subscript(NodeNG):
                 if index_value is self._SUBSCRIPT_SENTINEL:
                     raise InferenceError(node=self, context=context)
 
+                if not isinstance(
+                    value,
+                    (
+                        BaseInstance,
+                        ClassDef,
+                        objects.DictItems,
+                        objects.DictKeys,
+                        objects.DictValues,
+                    ),
+                ):
+                    # This kind of value has no ``getitem``, e.g. a function.
+                    raise InferenceError(node=self, context=context)
+
                 try:
                     assigned = value.getitem(index_value, context)
                 except (
@@ -3786,7 +3828,6 @@ class Subscript(NodeNG):
                     AstroidIndexError,
                     AstroidValueError,
                     AttributeInferenceError,
-                    AttributeError,
                 ) as exc:
                     raise InferenceError(node=self, context=context) from exc
 
@@ -4368,15 +4409,31 @@ class UnaryOp(_base_nodes.OperatorNode):
         InferenceResult | util.BadUnaryOperationMessage, None, InferenceErrorInfo
     ]:
         """Infer what an UnaryOp should return when evaluated."""
+        # pylint: disable-next=import-outside-toplevel
+        from astroid import objects
         from astroid.nodes import ClassDef  # pylint: disable=import-outside-toplevel
 
         for operand in self.operand.infer(context):
-            try:
-                yield operand.infer_unary_op(self.op)
-            except TypeError as exc:
-                # The operand doesn't support this operation.
-                yield util.BadUnaryOperationMessage(operand, self.op, exc)
-            except AttributeError as exc:
+            if isinstance(
+                operand,
+                (
+                    Const,
+                    Dict,
+                    List,
+                    Set,
+                    Tuple,
+                    objects.DictItems,
+                    objects.DictKeys,
+                    objects.DictValues,
+                    util.UninferableBase,
+                ),
+            ):
+                try:
+                    yield operand.infer_unary_op(self.op)
+                except TypeError as exc:
+                    # The operand doesn't support this operation.
+                    yield util.BadUnaryOperationMessage(operand, self.op, exc)
+            else:
                 meth = UNARY_OP_METHOD[self.op]
                 if meth is None:
                     # `not node`. Determine node's boolean
@@ -4391,14 +4448,20 @@ class UnaryOp(_base_nodes.OperatorNode):
                     if not isinstance(operand, (Instance, ClassDef)):
                         # The operation was used on something which
                         # doesn't support it.
-                        yield util.BadUnaryOperationMessage(operand, self.op, exc)
+                        yield util.BadUnaryOperationMessage(
+                            operand,
+                            self.op,
+                            AttributeInferenceError(target=operand, attribute=meth),
+                        )
                         continue
 
                     try:
                         try:
                             methods = dunder_lookup.lookup(operand, meth)
-                        except AttributeInferenceError:
-                            yield util.BadUnaryOperationMessage(operand, self.op, exc)
+                        except AttributeInferenceError as lookup_exc:
+                            yield util.BadUnaryOperationMessage(
+                                operand, self.op, lookup_exc
+                            )
                             continue
 
                         meth = methods[0]

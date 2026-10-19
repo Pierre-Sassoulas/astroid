@@ -7647,3 +7647,121 @@ def test_augassign_list_tuple_does_not_mutate_initial_value():
     inferred = next(module.body[-1].value.infer())
     assert inferred.as_string() == "[0, 1, 1]"
     assert module.body[0].value.as_string() == "[0]"
+
+
+def test_argv_is_uninferable_only_on_the_sys_module() -> None:
+    """A class that happens to be named ``sys`` keeps its ``argv`` attribute."""
+    node = _extract_single_node("""
+    class sys:
+        argv = 1
+    sys.argv #@
+    """)
+    inferred = next(node.infer())
+    assert isinstance(inferred, nodes.Const)
+    assert inferred.value == 1
+
+
+def test_attribute_of_lambda_is_not_inferred() -> None:
+    """A ``Lambda`` has no ``igetattr``: its attributes infer to nothing."""
+    node = _extract_single_node("(lambda: 1).__name__")
+    with pytest.raises(InferenceError):
+        next(node.infer())
+
+
+def test_starred_dict_view_is_unpacked() -> None:
+    node = _extract_single_node("""
+    d = {"a": 1}
+    [*d.keys()] #@
+    """)
+    inferred = next(node.infer())
+    assert isinstance(inferred, nodes.List)
+    assert [elt.value for elt in inferred.elts] == ["a"]
+
+
+def test_starred_function_is_not_unpacked() -> None:
+    node = _extract_single_node("""
+    def func():
+        pass
+    [*func] #@
+    """)
+    with pytest.raises(InferenceError):
+        next(node.infer())
+
+
+def test_call_of_module_is_not_inferred() -> None:
+    node = _extract_single_node("""
+    import os
+    os() #@
+    """)
+    with pytest.raises(InferenceError):
+        next(node.infer())
+
+
+def test_subscript_of_function_is_not_inferred() -> None:
+    node = _extract_single_node("""
+    def func():
+        pass
+    func[0] #@
+    """)
+    with pytest.raises(InferenceError):
+        next(node.infer())
+
+
+def test_subscript_of_dict_view() -> None:
+    node = _extract_single_node("""
+    d = {"a": 1}
+    d.keys()[0] #@
+    """)
+    inferred = next(node.infer())
+    assert isinstance(inferred, nodes.Const)
+    assert inferred.value == "a"
+
+
+def test_unary_operation_on_dict_view() -> None:
+    node = _extract_single_node("""
+    d = {"a": 1}
+    not d.keys() #@
+    """)
+    inferred = next(node.infer())
+    assert isinstance(inferred, nodes.Const)
+    assert inferred.value is False
+
+
+def test_unary_operation_on_function_reports_missing_special_method() -> None:
+    node = _extract_single_node("""
+    def func():
+        pass
+    -func #@
+    """)
+    errors = node.type_errors()
+    assert len(errors) == 1
+    assert isinstance(errors[0].error, AttributeInferenceError)
+    assert str(errors[0]) == "bad operand type for unary -: func"
+
+
+def test_unary_operation_on_instance_without_special_method() -> None:
+    node = _extract_single_node("""
+    class A:
+        pass
+    -A() #@
+    """)
+    errors = node.type_errors()
+    assert len(errors) == 1
+    assert isinstance(errors[0].error, AttributeInferenceError)
+
+
+def test_attribute_with_metaclass_function_as_property_does_not_crash() -> None:
+    """``with_metaclass`` inference reads ``caller.args`` on the instance.
+
+    The ``AttributeError`` safety net around attribute inference is still
+    needed for this.
+    """
+    node = _extract_single_node("""
+    def with_metaclass(meta, *bases):
+        return 1
+    class A:
+        x = property(with_metaclass)
+    A().x #@
+    """)
+    with pytest.raises(InferenceError):
+        next(node.infer())
