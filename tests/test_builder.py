@@ -19,7 +19,7 @@ import unittest.mock
 import pytest
 
 from astroid import Instance, builder, nodes, test_utils, util
-from astroid.const import IS_PYPY
+from astroid.const import IS_PYPY, PY312_PLUS
 from astroid.exceptions import (
     AstroidBuildingError,
     AstroidSyntaxError,
@@ -1042,3 +1042,18 @@ class StubBuildTest(unittest.TestCase):
         assert isinstance(func.body[0], nodes.Expr)
         assert isinstance(func.body[0].value, nodes.Const)
         assert func.body[0].value.value is ...
+
+
+@pytest.mark.skipif(not PY312_PLUS, reason="Requires PEP 695 type parameters")
+def test_delayed_assattr_without_namespace() -> None:
+    """Assigning an attribute on an object without a namespace records nothing."""
+    module = builder.parse("""
+        def fill[Fruit]():
+            Fruit.apple = 1
+            (lambda: 0).banana = 2
+        """)
+    type_var = next(module.nodes_of_class(nodes.TypeVar))
+    assert not hasattr(type_var, "locals")
+    assert "apple" not in module["fill"].locals
+    lambda_node = next(module.nodes_of_class(nodes.Lambda))
+    assert "banana" in lambda_node.locals

@@ -19,7 +19,7 @@ import warnings
 from collections.abc import Collection, Iterator, Sequence
 from io import TextIOWrapper
 from tokenize import detect_encoding
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
 
 from astroid import bases, modutils, nodes, raw_building, rebuilder, util
 from astroid.const import PY312_PLUS, PY314_PLUS
@@ -27,6 +27,7 @@ from astroid.exceptions import AstroidBuildingError, AstroidSyntaxError, Inferen
 
 if TYPE_CHECKING:
     from astroid.manager import AstroidManager
+    from astroid.typing import InferenceResult
 
 # The name of the transient function that is used to
 # wrap expressions to be extracted when calling
@@ -84,7 +85,7 @@ class AstroidBuilder(raw_building.InspectBuilder):
         self, module: types.ModuleType, modname: str | None = None
     ) -> nodes.Module:
         """Build an astroid from a living module instance."""
-        node = None
+        node: InferenceResult | None = None
         path = getattr(module, "__file__", None)
         loader = getattr(module, "__loader__", None)
         # Prefer the loader to get the source rather than assuming we have a
@@ -177,7 +178,9 @@ class AstroidBuilder(raw_building.InspectBuilder):
 
         # Visit the transforms
         if self._apply_transforms:
-            module = self._manager.visit_transforms(module)
+            transformed = self._manager.visit_transforms(module)
+            assert isinstance(transformed, nodes.Module)
+            return transformed
         return module
 
     def _data_build(
@@ -228,8 +231,6 @@ class AstroidBuilder(raw_building.InspectBuilder):
         def add_local(parent_or_root: nodes.NodeNG, name: str) -> None:
             parent_or_root.set_local(name, node)
             my_list = parent_or_root.scope().locals[name]
-            if TYPE_CHECKING:
-                my_list = cast(list[nodes.NodeNG], my_list)
             my_list.sort(key=lambda n: n.fromlineno or 0)
 
         assert node.parent  # It should always default to the module
@@ -266,6 +267,7 @@ class AstroidBuilder(raw_building.InspectBuilder):
                 try:
                     # We want a narrow check on the parent type, not all of its subclasses
                     if type(inferred) in {bases.Instance, objects.ExceptionInstance}:
+                        assert isinstance(inferred, bases.Instance)
                         inferred = inferred._proxied
                         iattrs = inferred.instance_attrs
                         if not _can_assign_attr(inferred, node.attrname):
@@ -276,10 +278,14 @@ class AstroidBuilder(raw_building.InspectBuilder):
                         continue
                     elif isinstance(inferred, (bases.Proxy, util.UninferableBase)):
                         continue
-                    elif inferred.is_function:
+                    # Only FunctionDef (and its subclasses) has is_function set
+                    elif isinstance(inferred, nodes.FunctionDef):
                         iattrs = inferred.instance_attrs
-                    else:
+                    elif isinstance(inferred, nodes.LocalsDictNodeNG):
                         iattrs = inferred.locals
+                    else:
+                        # Other nodes (type parameters for instance) have no namespace
+                        continue
                 except AttributeError:
                     # XXX log error
                     continue
@@ -379,6 +385,7 @@ def _find_statement_by_line(node: nodes.NodeNG, line: int) -> nodes.NodeNG | Non
       can be found.
     :rtype:  astroid.bases.NodeNG or None
     """
+    node_line: int | None
     if isinstance(node, (nodes.ClassDef, nodes.FunctionDef, nodes.MatchCase)):
         # This is an inaccuracy in the AST: the nodes that can be
         # decorated do not carry explicit information on which line
