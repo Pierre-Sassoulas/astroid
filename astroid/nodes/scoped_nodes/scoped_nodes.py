@@ -15,7 +15,7 @@ import itertools
 import os
 from collections.abc import Generator, Iterable, Iterator, Sequence
 from functools import cached_property, lru_cache
-from typing import TYPE_CHECKING, ClassVar, Literal, NoReturn, Self, TypeGuard
+from typing import TYPE_CHECKING, ClassVar, Literal, NoReturn, Protocol, Self, TypeGuard
 
 from astroid import bases, protocols, util
 from astroid.context import (
@@ -61,6 +61,28 @@ EXCEPTION_BASE_CLASSES = frozenset({"Exception", "BaseException"})
 BUILTIN_DESCRIPTORS = frozenset(
     {"classmethod", "staticmethod", "builtins.classmethod", "builtins.staticmethod"}
 )
+
+
+class _AttributeLookup(Protocol):
+    """What can look up its attributes, as checked by ``hasattr(node, "getattr")``."""
+
+    def getattr(
+        self, name: str, context: InferenceContext | None = None
+    ) -> list[InferenceResult]: ...  # pragma: no cover
+
+
+class _Iterable(Protocol):
+    """What can list its elements, as checked by ``hasattr(node, "itered")``."""
+
+    def itered(self) -> Sequence[InferenceResult]: ...  # pragma: no cover
+
+
+def _has_getattr(node: object) -> TypeGuard[_AttributeLookup]:
+    return hasattr(node, "getattr")
+
+
+def _has_itered(node: object) -> TypeGuard[_Iterable]:
+    return hasattr(node, "itered")
 
 
 def _c3_merge(
@@ -2556,7 +2578,10 @@ class ClassDef(
                 attributes = [
                     a
                     for a in attributes
-                    if a not in functions or a is last_function or bases._is_property(a)
+                    # functions holds every FunctionDef of attributes
+                    if not isinstance(a, FunctionDef)
+                    or a is last_function
+                    or bases._is_property(a)
                 ]
 
             for inferred in bases._infer_stmts(attributes, context, frame=self):
@@ -2795,7 +2820,7 @@ class ClassDef(
 
     def _islots(
         self,
-    ) -> Generator[node_classes.Const, None, list[InferenceResult] | None]:
+    ) -> Generator[node_classes.Const, None, Sequence[InferenceResult] | None]:
         """Return an iterator with the inferred slots."""
         if "__slots__" not in self.locals:
             return None
@@ -2807,7 +2832,7 @@ class ClassDef(
             return None
         for slots in slots_attributes:
             # check if __slots__ is a valid type
-            if not hasattr(slots, "getattr"):
+            if not _has_getattr(slots):
                 continue
             for meth in ITER_METHODS:
                 try:
@@ -2824,7 +2849,7 @@ class ClassDef(
                 if slots.value:
                     yield slots
                 continue
-            if not hasattr(slots, "itered"):
+            if not _has_itered(slots):
                 # we can't obtain the values, maybe a .deque?
                 continue
 
@@ -2855,7 +2880,7 @@ class ClassDef(
 
         return None
 
-    def _slots(self) -> list[node_classes.Const] | list[InferenceResult] | None:
+    def _slots(self) -> list[node_classes.Const] | Sequence[InferenceResult] | None:
 
         slots = self._islots()
         try:
@@ -2863,7 +2888,7 @@ class ClassDef(
         except StopIteration as exc:
             # The class doesn't have a __slots__ definition or empty slots.
             if exc.args and exc.args[0] not in ("", None):
-                empty_slots: list[InferenceResult] = exc.args[0]
+                empty_slots: Sequence[InferenceResult] = exc.args[0]
                 return empty_slots
             return None
         return [first, *slots]
