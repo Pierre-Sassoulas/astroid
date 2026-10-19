@@ -4440,8 +4440,8 @@ class UnaryOp(_base_nodes.OperatorNode):
                 # The operand doesn't support this operation.
                 yield util.BadUnaryOperationMessage(operand, self.op, exc)
             except AttributeError as exc:
-                meth = UNARY_OP_METHOD[self.op]
-                if meth is None:
+                method_name = UNARY_OP_METHOD[self.op]
+                if method_name is None:
                     # `not node`. Determine node's boolean
                     # value and negate its result, unless it is
                     # Uninferable, which will be returned as is.
@@ -4459,15 +4459,16 @@ class UnaryOp(_base_nodes.OperatorNode):
 
                     try:
                         try:
-                            methods = dunder_lookup.lookup(operand, meth)
+                            methods = dunder_lookup.lookup(operand, method_name)
                         except AttributeInferenceError:
                             yield util.BadUnaryOperationMessage(operand, self.op, exc)
                             continue
 
-                        meth = methods[0]
-                        inferred = next(meth.infer(context=context), None)
+                        method = methods[0]
+                        inferred = next(method.infer(context=context), None)
                         if (
-                            isinstance(inferred, util.UninferableBase)
+                            inferred is None
+                            or isinstance(inferred, util.UninferableBase)
                             or not inferred.callable()
                         ):
                             continue
