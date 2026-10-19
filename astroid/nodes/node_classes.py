@@ -868,10 +868,11 @@ class Arguments(
         kw_only: dict[str, tuple[str | None, str | None]] = {}
 
         # Setup and match defaults with arguments
+        # ``args`` is None when the arguments are unknown.
+        args = self.args or []
         positional_only_defaults = []
         positional_or_keyword_defaults = self.defaults
         if self.defaults:
-            args = self.args or []
             positional_or_keyword_defaults = self.defaults[-len(args) :]
             positional_only_defaults = self.defaults[: len(self.defaults) - len(args)]
 
@@ -883,12 +884,12 @@ class Arguments(
                 default = positional_only_defaults[index].as_string()
             pos_only[posonly.name] = (annotation, default)
 
-        for index, arg in enumerate(self.args):
+        for index, arg in enumerate(args):
             annotation, default = self.annotations[index], None
             if annotation is not None:
                 annotation = annotation.as_string()
             if positional_or_keyword_defaults:
-                defaults_offset = len(self.args) - len(positional_or_keyword_defaults)
+                defaults_offset = len(args) - len(positional_or_keyword_defaults)
                 default_index = index - defaults_offset
                 if (
                     default_index > -1
@@ -929,19 +930,22 @@ class Arguments(
         :raises NoDefault: If there is no default value defined for the
             given argument.
         """
+        # ``kw_defaults`` and ``defaults`` are None when they are unknown.
+        kw_defaults = self.kw_defaults or []
         index = _find_arg(argname, self.kwonlyargs)[0]
-        if (index is not None) and (len(self.kw_defaults) > index):
-            if self.kw_defaults[index] is not None:
-                return self.kw_defaults[index]
+        if (index is not None) and (len(kw_defaults) > index):
+            if kw_defaults[index] is not None:
+                return kw_defaults[index]
             raise NoDefault(func=self.parent, name=argname)
 
         positional = [*(self.posonlyargs or ()), *(self.args or ())]
+        defaults = self.defaults or []
         index = _find_arg(argname, positional)[0]
         if index is not None:
             # ``defaults`` covers the last positional arguments.
-            idx = index - (len(positional) - len(self.defaults))
+            idx = index - (len(positional) - len(defaults))
             if idx >= 0:
-                return self.defaults[idx]
+                return defaults[idx]
 
         raise NoDefault(func=self.parent, name=argname)
 
