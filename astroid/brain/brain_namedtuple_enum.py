@@ -571,10 +571,12 @@ def infer_enum_class(node: nodes.ClassDef) -> nodes.ClassDef:
 def infer_typing_namedtuple_class(class_node, context: InferenceContext | None = None):
     """Infer a subclass of typing.NamedTuple."""
     # Check if it has the corresponding bases
+    # Only annotated names are fields, not annotated attributes or subscripts
     annassigns_fields = [
         annassign.target.name
         for annassign in class_node.body
         if isinstance(annassign, nodes.AnnAssign)
+        and isinstance(annassign.target, nodes.AssignName)
     ]
     code = dedent("""
     from collections import namedtuple

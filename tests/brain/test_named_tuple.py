@@ -309,6 +309,24 @@ class NamedTupleTest(unittest.TestCase):
         inferred = next(node.infer())
         self.assertIs(util.Uninferable, inferred)
 
+    def test_typing_namedtuple_class_with_attribute_annotation(self) -> None:
+        """An annotated attribute target does not define a field.
+
+        It used to crash the inference with an AttributeError.
+        """
+        node = builder.extract_node("""
+        from typing import NamedTuple
+
+        class Point(NamedTuple):
+            x: int
+            other.attr: int = 3
+
+        Point  #@
+        """)
+        inferred = next(node.infer())
+        assert isinstance(inferred, nodes.ClassDef)
+        assert inferred.getattr("_fields")[0].statement().value.as_string() == "('x', )"
+
     def test_name_as_typename(self) -> None:
         """Reported in https://github.com/pylint-dev/pylint/issues/7429 as a crash."""
         good_node, good_node_two, bad_node = builder.extract_node("""
