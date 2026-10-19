@@ -36,10 +36,10 @@ if TYPE_CHECKING:
     GetFlowFactory = Callable[
         [
             SuccessfulInferenceResult,
-            InferenceResult | None,
+            InferenceResult,
             _OpNodeT,
             SuccessfulInferenceResult,
-            InferenceResult | None,
+            InferenceResult,
             InferenceContext,
             InferenceContext,
         ],
@@ -567,17 +567,20 @@ class OperatorNode(NodeNG):
             yield new_context
 
     @staticmethod
-    def _same_type(type1, type2) -> bool:
+    def _same_type(type1: InferenceResult, type2: InferenceResult) -> bool:
         """Check if type1 is the same as type2."""
-        return type1.qname() == type2.qname()
+        # The types come from helpers.object_type: classes, proxies of classes
+        # or Uninferable, which all answer qname().
+        same: bool = type1.qname() == type2.qname()  # type: ignore[union-attr] # pyright: ignore[reportAttributeAccessIssue]
+        return same
 
     @staticmethod
     def _get_aug_flow(
         left: SuccessfulInferenceResult,
-        left_type: InferenceResult | None,
+        left_type: InferenceResult,
         aug_opnode: nodes.AugAssign,
         right: SuccessfulInferenceResult,
-        right_type: InferenceResult | None,
+        right_type: InferenceResult,
         context: InferenceContext,
         reverse_context: InferenceContext,
     ) -> list[partial[Iterator[InferenceResult]]]:
@@ -631,10 +634,10 @@ class OperatorNode(NodeNG):
     @staticmethod
     def _get_binop_flow(
         left: SuccessfulInferenceResult,
-        left_type: InferenceResult | None,
+        left_type: InferenceResult,
         binary_opnode: nodes.AugAssign | nodes.BinOp,
         right: SuccessfulInferenceResult,
-        right_type: InferenceResult | None,
+        right_type: InferenceResult,
         context: InferenceContext,
         reverse_context: InferenceContext,
     ) -> list[partial[Iterator[InferenceResult]]]:
