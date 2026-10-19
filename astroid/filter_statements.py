@@ -34,7 +34,7 @@ def _get_filtered_node_statements(
     return statements
 
 
-def _is_from_decorator(node) -> bool:
+def _is_from_decorator(node: nodes.NodeNG) -> bool:
     """Return whether the given node is the child of a decorator."""
     return any(isinstance(parent, nodes.Decorators) for parent in node.node_ancestors())
 
@@ -75,7 +75,11 @@ def _filter_stmts(
     #
     # we need this to resolve B correctly
     if offset == -1:
-        myframe = base_node.frame().parent.frame()
+        # base_node is a default value or a base of the function or class
+        # definition it is in, and the caller checked that it has a parent.
+        definition_parent = base_node.frame().parent
+        assert definition_parent is not None
+        myframe = definition_parent.frame()
     else:
         myframe = base_node.frame()
         # If the frame of this node is the same as the statement
