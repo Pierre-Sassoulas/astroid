@@ -185,7 +185,9 @@ def class_or_tuple_to_container(
     return class_container
 
 
-def has_known_bases(klass, context: InferenceContext | None = None) -> bool:
+def has_known_bases(
+    klass: InferenceResult | None, context: InferenceContext | None = None
+) -> bool:
     """Return whether all base classes of a class could be inferred."""
     if not isinstance(klass, scoped_nodes.ClassDef):
         # Not a class, so it has no bases at all. This happens for the type of a
@@ -210,9 +212,11 @@ def has_known_bases(klass, context: InferenceContext | None = None) -> bool:
     return True
 
 
-def _type_check(type1, type2) -> bool:
+def _type_check(type1: InferenceResult | None, type2: InferenceResult | None) -> bool:
     if not all(map(has_known_bases, (type1, type2))):
         raise _NonDeducibleTypeHierarchy
+    # has_known_bases is only true for classes
+    assert isinstance(type2, scoped_nodes.ClassDef)
 
     try:
         return type1 in type2.mro()[:-1]
@@ -221,12 +225,12 @@ def _type_check(type1, type2) -> bool:
         raise _NonDeducibleTypeHierarchy from e
 
 
-def is_subtype(type1, type2) -> bool:
+def is_subtype(type1: InferenceResult | None, type2: InferenceResult | None) -> bool:
     """Check if *type1* is a subtype of *type2*."""
     return _type_check(type1=type2, type2=type1)
 
 
-def is_supertype(type1, type2) -> bool:
+def is_supertype(type1: InferenceResult | None, type2: InferenceResult | None) -> bool:
     """Check if *type2* is a supertype of *type1*."""
     return _type_check(type1, type2)
 
@@ -254,7 +258,7 @@ def class_instance_as_index(node: bases.Instance) -> nodes.Const | None:
     return None
 
 
-def object_len(node, context: InferenceContext | None = None):
+def object_len(node: nodes.NodeNG, context: InferenceContext | None = None) -> int:
     """Infer length of given node object.
 
     :param Union[nodes.ClassDef, nodes.Instance] node:
@@ -319,7 +323,8 @@ def object_len(node, context: InferenceContext | None = None):
         isinstance(result_of_len, nodes.Const)
         and result_of_len.pytype() == "builtins.int"
     ):
-        return result_of_len.value
+        length: int = result_of_len.value
+        return length
     if result_of_len is None or (
         isinstance(result_of_len, bases.Instance)
         and result_of_len.is_subtype_of("builtins.int")
@@ -348,6 +353,7 @@ def _higher_function_scope(node: nodes.NodeNG) -> nodes.FunctionDef | None:
     current = node
     while current.parent and not isinstance(current.parent, nodes.FunctionDef):
         current = current.parent
-    if current and current.parent:
+    # Nodes are always truthy: the loop stopped on a function or the root
+    if isinstance(current.parent, nodes.FunctionDef):
         return current.parent
     return None
