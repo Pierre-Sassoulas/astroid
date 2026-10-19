@@ -48,6 +48,7 @@ from astroid.exceptions import (
 )
 from astroid.nodes.node_classes import UNATTACHED_UNKNOWN
 from astroid.nodes.scoped_nodes import SYNTHETIC_ROOT
+from astroid.raw_building import build_function
 from tests.testdata.python3.recursion_error import LONG_CHAINED_METHOD_CALL
 
 from . import resources
@@ -2372,6 +2373,32 @@ def test_arguments_default_value_positional_shares_vararg_name() -> None:
     """The default of a positional argument shadowed by ``*args`` is still found."""
     node = extract_node("def f(y=1, *y): ...")
     assert node.args.default_value("y").value == 1
+
+
+def test_arguments_data() -> None:
+    node = extract_node(
+        "def f(a: int = 0, /, b=1, *args: str, c: int = 2, **kwargs: bool): ..."
+    )
+    assert node.args._get_arguments_data() == (
+        {"a": ("int", "0"), "b": (None, "1"), "args": ("str", None)},
+        {"c": ("int", "2"), "kwargs": ("bool", None)},
+    )
+
+
+def test_arguments_of_living_function_without_kwonly_defaults() -> None:
+    """A function built without signature details has ``args`` and ``kw_defaults`` None.
+
+    Looking up its defaults used to raise ``TypeError``.
+    """
+    module = nodes.Module("module", pure_python=False, package=False)
+    function = build_function("f", module, kwonlyargs=["x"])
+    assert function.args.args is None
+    assert function.args.kw_defaults is None
+    with pytest.raises(NoDefault):
+        function.args.default_value("x")
+    function = build_function("g", module)
+    assert function.args.args is None
+    assert function.args._get_arguments_data() == ({}, {})
 
 
 def test_infer_argument_sharing_vararg_name() -> None:

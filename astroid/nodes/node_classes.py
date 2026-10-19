@@ -12,12 +12,12 @@ import itertools
 import operator
 import typing
 import warnings
-from collections.abc import Callable, Generator, Iterable, Iterator, Mapping
+from collections.abc import Callable, Generator, Iterable, Iterator, Mapping, Sequence
 from functools import cached_property
 from typing import TYPE_CHECKING, Any, ClassVar, Literal, Self, Union
 
 from astroid import decorators, protocols, util
-from astroid.bases import Instance, _infer_stmts
+from astroid.bases import BaseInstance, Instance, _infer_stmts
 from astroid.const import _EMPTY_OBJECT_MARKER, PY314_PLUS, Context
 from astroid.context import CallContext, InferenceContext, copy_context
 from astroid.exceptions import (
@@ -768,7 +768,9 @@ class Arguments(
     See astroid/protocols.py for actual implementation.
     """
 
-    def _infer_name(self, frame, name):
+    def _infer_name(
+        self, frame: NodeNG | BaseInstance | None, name: str | None
+    ) -> str | None:
         if self.parent is frame:
             return name
         return None
@@ -780,10 +782,11 @@ class Arguments(
         Can also return 0 if the line can not be determined.
         """
         lineno = super().fromlineno
+        assert self.parent is not None
         return max(lineno, self.parent.fromlineno or 0)
 
     @cached_property
-    def arguments(self):
+    def arguments(self) -> list[AssignName]:
         """Get all the arguments for this node. This includes:
 
         * Positional only arguments
@@ -868,59 +871,52 @@ class Arguments(
         kw_only: dict[str, tuple[str | None, str | None]] = {}
 
         # Setup and match defaults with arguments
-        positional_only_defaults = []
+        args = self.args or []
+        positional_only_defaults: list[NodeNG] = []
         positional_or_keyword_defaults = self.defaults
         if self.defaults:
-            args = self.args or []
             positional_or_keyword_defaults = self.defaults[-len(args) :]
             positional_only_defaults = self.defaults[: len(self.defaults) - len(args)]
 
+        default: str | None
         for index, posonly in enumerate(self.posonlyargs):
-            annotation, default = self.posonlyargs_annotations[index], None
-            if annotation is not None:
-                annotation = annotation.as_string()
+            annotation = _as_string_or_none(self.posonlyargs_annotations[index])
+            default = None
             if positional_only_defaults:
                 default = positional_only_defaults[index].as_string()
             pos_only[posonly.name] = (annotation, default)
 
-        for index, arg in enumerate(self.args):
-            annotation, default = self.annotations[index], None
-            if annotation is not None:
-                annotation = annotation.as_string()
+        for index, arg in enumerate(args):
+            annotation, default = _as_string_or_none(self.annotations[index]), None
             if positional_or_keyword_defaults:
-                defaults_offset = len(self.args) - len(positional_or_keyword_defaults)
+                defaults_offset = len(args) - len(positional_or_keyword_defaults)
                 default_index = index - defaults_offset
-                if (
-                    default_index > -1
-                    and positional_or_keyword_defaults[default_index] is not None
-                ):
-                    default = positional_or_keyword_defaults[default_index].as_string()
+                if default_index > -1:
+                    default = _as_string_or_none(
+                        positional_or_keyword_defaults[default_index]
+                    )
             pos_only[arg.name] = (annotation, default)
 
         if self.vararg:
-            annotation = self.varargannotation
-            if annotation is not None:
-                annotation = annotation.as_string()
+            annotation = _as_string_or_none(self.varargannotation)
             pos_only[self.vararg] = (annotation, None)
 
         for index, kwarg in enumerate(self.kwonlyargs):
-            annotation = self.kwonlyargs_annotations[index]
-            if annotation is not None:
-                annotation = annotation.as_string()
-            default = self.kw_defaults[index]
-            if default is not None:
-                default = default.as_string()
+            annotation = _as_string_or_none(self.kwonlyargs_annotations[index])
+            default = (
+                _as_string_or_none(self.kw_defaults[index])
+                if self.kw_defaults
+                else None
+            )
             kw_only[kwarg.name] = (annotation, default)
 
         if self.kwarg:
-            annotation = self.kwargannotation
-            if annotation is not None:
-                annotation = annotation.as_string()
+            annotation = _as_string_or_none(self.kwargannotation)
             kw_only[self.kwarg] = (annotation, None)
 
         return pos_only, kw_only
 
-    def default_value(self, argname):
+    def default_value(self, argname: str) -> NodeNG:
         """Get the default value for an argument.
 
         :param argname: The name of the argument to get the default value for.
@@ -929,23 +925,27 @@ class Arguments(
         :raises NoDefault: If there is no default value defined for the
             given argument.
         """
+        # ``kw_defaults`` and ``defaults`` are None when they are unknown.
+        kw_defaults = self.kw_defaults or []
         index = _find_arg(argname, self.kwonlyargs)[0]
-        if (index is not None) and (len(self.kw_defaults) > index):
-            if self.kw_defaults[index] is not None:
-                return self.kw_defaults[index]
+        if (index is not None) and (len(kw_defaults) > index):
+            kw_default = kw_defaults[index]
+            if kw_default is not None:
+                return kw_default
             raise NoDefault(func=self.parent, name=argname)
 
         positional = [*(self.posonlyargs or ()), *(self.args or ())]
+        defaults = self.defaults or []
         index = _find_arg(argname, positional)[0]
         if index is not None:
             # ``defaults`` covers the last positional arguments.
-            idx = index - (len(positional) - len(self.defaults))
+            idx = index - (len(positional) - len(defaults))
             if idx >= 0:
-                return self.defaults[idx]
+                return defaults[idx]
 
         raise NoDefault(func=self.parent, name=argname)
 
-    def is_argument(self, name) -> bool:
+    def is_argument(self, name: str) -> bool:
         """Check if the given name is defined in the arguments.
 
         :param name: The name to check for.
@@ -959,7 +959,7 @@ class Arguments(
             return True
         return self.find_argname(name)[1] is not None
 
-    def find_argname(self, argname):
+    def find_argname(self, argname: str) -> tuple[int | None, AssignName | None]:
         """Get the index and :class:`AssignName` node for given name.
 
         :param argname: The name of the argument to search for.
@@ -974,7 +974,7 @@ class Arguments(
                 return index, argument
         return None, None
 
-    def get_children(self):
+    def get_children(self) -> Iterator[NodeNG]:
         yield from self.posonlyargs or ()
 
         for elt in self.posonlyargs_annotations:
@@ -1034,7 +1034,13 @@ class Arguments(
         return _arguments_infer_argname(self, context.lookupname, context)
 
 
-def _find_arg(argname, args):
+def _as_string_or_none(node: NodeNG | None) -> str | None:
+    return None if node is None else node.as_string()
+
+
+def _find_arg(
+    argname: str, args: Sequence[AssignName]
+) -> tuple[int | None, AssignName | None]:
     for i, arg in enumerate(args):
         if arg.name == argname:
             return i, arg
@@ -1042,36 +1048,36 @@ def _find_arg(argname, args):
 
 
 def _format_args(
-    args, defaults=None, annotations=None, skippable_names: set[str] | None = None
+    args: Sequence[AssignName] | None,
+    defaults: Sequence[NodeNG | None] | None = None,
+    annotations: Sequence[NodeNG | None] | None = None,
+    skippable_names: set[str] | None = None,
 ) -> str:
     if skippable_names is None:
         skippable_names = set()
-    values = []
+    values: list[str] = []
     if args is None:
         return ""
     if annotations is None:
         annotations = []
-    if defaults is not None:
-        default_offset = len(args) - len(defaults)
-    else:
-        default_offset = None
+    # Without defaults, the offset is past the last argument.
+    defaults = defaults or []
+    default_offset = len(args) - len(defaults)
     packed = itertools.zip_longest(args, annotations)
     for i, (arg, annotation) in enumerate(packed):
         if arg.name in skippable_names:
             continue
-        if isinstance(arg, Tuple):
-            values.append(f"({_format_args(arg.elts)})")
-        else:
-            argname = arg.name
-            default_sep = "="
-            if annotation is not None:
-                argname += ": " + annotation.as_string()
-                default_sep = " = "
-            values.append(argname)
+        argname = arg.name
+        default_sep = "="
+        if annotation is not None:
+            argname += ": " + annotation.as_string()
+            default_sep = " = "
+        values.append(argname)
 
-            if default_offset is not None and i >= default_offset:
-                if defaults[i - default_offset] is not None:
-                    values[-1] += default_sep + defaults[i - default_offset].as_string()
+        if i >= default_offset:
+            default = defaults[i - default_offset]
+            if default is not None:
+                values[-1] += default_sep + default.as_string()
     return ", ".join(values)
 
 
