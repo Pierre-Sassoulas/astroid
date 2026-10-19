@@ -84,6 +84,22 @@ InferLHS = Callable[
 InferUnaryOp = Callable[[_NodesT, str], ConstFactoryResult]
 
 
+class _CallResultInferable(typing.Protocol):
+    """What can infer the result of calling it."""
+
+    def infer_call_result(
+        self,
+        caller: SuccessfulInferenceResult | None,
+        context: InferenceContext | None = None,
+    ) -> Iterator[InferenceResult]: ...  # pragma: no cover
+
+
+def _has_infer_call_result(
+    node: SuccessfulInferenceResult,
+) -> typing.TypeGuard[_CallResultInferable]:
+    return hasattr(node, "infer_call_result")
+
+
 @decorators.raise_if_nothing_inferred
 def unpack_infer(stmt, context: InferenceContext | None = None):
     """recursively generate nodes inferred by the given statement.
@@ -1799,12 +1815,13 @@ class Call(NodeNG):
             if isinstance(callee, util.UninferableBase):
                 yield callee
                 continue
+            inferable = callee
             try:
-                if hasattr(callee, "infer_call_result"):
+                if _has_infer_call_result(inferable):
                     callcontext.callcontext = CallContext(
                         args=self.args, keywords=self.keywords, callee=callee
                     )
-                    yield from callee.infer_call_result(
+                    yield from inferable.infer_call_result(
                         caller=self, context=callcontext
                     )
             except InferenceError:
@@ -2470,7 +2487,7 @@ class Dict(NodeNG, Instance):
 
     def getitem(
         self, index: Const | Slice, context: InferenceContext | None = None
-    ) -> NodeNG:
+    ) -> InferenceResult:
         """Get an item from this node.
 
         :param index: The node to use as a subscript index.
@@ -3845,7 +3862,8 @@ class Subscript(NodeNG):
                 index_value = self._SUBSCRIPT_SENTINEL
                 if value.__class__ == Instance:
                     index_value = index
-                elif index.__class__ == Instance:
+                # The exact class on purpose, like the __class__ check above.
+                elif type(index) is Instance:  # pylint: disable=unidiomatic-typecheck
                     instance_as_index = helpers.class_instance_as_index(index)
                     if instance_as_index:
                         index_value = instance_as_index
