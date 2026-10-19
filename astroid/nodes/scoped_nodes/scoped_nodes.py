@@ -2630,7 +2630,9 @@ class ClassDef(
                 pass
         return False
 
-    def getitem(self, index, context: InferenceContext | None = None):
+    def getitem(
+        self, index: SuccessfulInferenceResult, context: InferenceContext | None = None
+    ) -> InferenceResult:
         """Return the inference of a subscript.
 
         This is basically looking up the method in the metaclass and calling it.
@@ -3027,7 +3029,9 @@ class ClassDef(
         """
         return True
 
-    def get_children(self):
+    # Brains put inferred values, such as Instance proxies, in bases, so the
+    # children of a class are wider than those of NodeNG.get_children.
+    def get_children(self) -> Iterator[SuccessfulInferenceResult]:  # type: ignore[override] # pyright: ignore[reportIncompatibleMethodOverride]
         if self.decorators is not None:
             yield self.decorators
 
