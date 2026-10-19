@@ -4170,7 +4170,7 @@ class TypeAlias(_base_nodes.AssignTypeNode, _base_nodes.Statement):
                 InferenceContext | None,
                 None,
             ],
-            Generator[NodeNG],
+            Generator[InferenceResult],
         ]
     ] = protocols.assign_assigned_stmts
 

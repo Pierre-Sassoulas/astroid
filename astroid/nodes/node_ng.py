@@ -151,7 +151,7 @@ class NodeNG:
             yield from context.inferred[key]
             return
 
-        results = []
+        results: list[InferenceResult] = []
 
         # Limit inference amount to help with performance issues with
         # exponentially exploding possible results.
@@ -383,6 +383,7 @@ class NodeNG:
         :returns: The next sibling statement node.
         :rtype: NodeNG or None
         """
+        assert self.parent
         return self.parent.next_sibling()
 
     def previous_sibling(self):
@@ -391,6 +392,7 @@ class NodeNG:
         :returns: The previous sibling statement node.
         :rtype: NodeNG or None
         """
+        assert self.parent
         return self.parent.previous_sibling()
 
     # these are lazy because they're relatively expensive to compute for every
@@ -503,7 +505,7 @@ class NodeNG:
             | tuple[type[_NodesT], ...]
         ),
         skip_klass: SkipKlassT = None,
-    ) -> Iterator[_NodesT] | Iterator[_NodesT2] | Iterator[_NodesT3]:
+    ) -> Iterator[_NodesT | _NodesT2 | _NodesT3]:
         """Get the nodes (including this one or below) of the given types.
 
         :param klass: The types of node to search for.
