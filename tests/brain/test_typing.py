@@ -129,3 +129,18 @@ class TestSpecialAlias:
         # Should not raise IndexError
         module = builder.parse(code)
         assert isinstance(module, nodes.Module)
+
+    def test_special_alias_of_uninferable_class(self) -> None:
+        """The aliased class is only added as a base when it can be inferred.
+
+        An Uninferable base made ``ancestors()`` crash with a TypeError.
+        """
+        node = builder.extract_node("""
+        from unknown_module import tuple
+        Tuple = _TupleType(tuple, -1)
+        Tuple  #@
+        """)
+        inferred = next(node.infer())
+        assert isinstance(inferred, nodes.ClassDef)
+        assert inferred.bases == []
+        assert [ancestor.name for ancestor in inferred.ancestors()] == ["object"]
