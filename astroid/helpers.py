@@ -18,7 +18,7 @@ from astroid.exceptions import (
     _NonDeducibleTypeHierarchy,
 )
 from astroid.nodes import scoped_nodes
-from astroid.typing import InferenceResult
+from astroid.typing import InferenceResult, SuccessfulInferenceResult
 from astroid.util import safe_infer
 
 
@@ -258,7 +258,9 @@ def class_instance_as_index(node: bases.Instance) -> nodes.Const | None:
     return None
 
 
-def object_len(node: nodes.NodeNG, context: InferenceContext | None = None) -> int:
+def object_len(
+    node: SuccessfulInferenceResult, context: InferenceContext | None = None
+) -> int:
     """Infer length of given node object.
 
     :param Union[nodes.ClassDef, nodes.Instance] node:
