@@ -69,11 +69,9 @@ def _dunder_dict(instance, attributes):
 
 
 def _get_bound_node(model: ObjectModel) -> Any:
-    # TODO: Use isinstance instead of try ... except after _instance has typing
-    try:
+    if isinstance(model._instance, bases.Proxy):
         return model._instance._proxied
-    except AttributeError:
-        return model._instance
+    return model._instance
 
 
 class ObjectModel:
@@ -238,7 +236,7 @@ class ModuleModel(ObjectModel):
     @property
     def attr___doc__(self):
         return node_classes.Const(
-            value=getattr(self._instance.doc_node, "value", None),
+            value=self._instance.doc_node.value if self._instance.doc_node else None,
             parent=self._instance,
         )
 
@@ -291,7 +289,7 @@ class FunctionModel(ObjectModel):
     @property
     def attr___doc__(self):
         return node_classes.Const(
-            value=getattr(self._instance.doc_node, "value", None),
+            value=self._instance.doc_node.value if self._instance.doc_node else None,
             parent=self._instance,
         )
 
@@ -437,7 +435,11 @@ class FunctionModel(ObjectModel):
                 caller: SuccessfulInferenceResult | None,
                 context: InferenceContext | None = None,
             ) -> Iterator[bases.BoundMethod]:
-                if len(caller.args) > 2 or len(caller.args) < 1:
+                if (
+                    not isinstance(caller, nodes.Call)
+                    or len(caller.args) > 2
+                    or len(caller.args) < 1
+                ):
                     raise InferenceError(
                         "Invalid arguments for descriptor binding",
                         target=self,
@@ -574,7 +576,8 @@ class ClassModel(ObjectModel):
 
     @property
     def attr___doc__(self):
-        return node_classes.Const(getattr(self._instance.doc_node, "value", None))
+        doc_node = self._instance.doc_node
+        return node_classes.Const(doc_node.value if doc_node else None)
 
     @property
     def attr___mro__(self):
@@ -786,7 +789,11 @@ class GeneratorBaseModel(FunctionModel, ContextManagerModel):
     @property
     def attr___doc__(self):
         return node_classes.Const(
-            value=getattr(self._instance.parent.doc_node, "value", None),
+            value=(
+                self._instance.parent.doc_node.value
+                if self._instance.parent.doc_node
+                else None
+            ),
             parent=self._instance,
         )
 
@@ -812,7 +819,8 @@ class InstanceModel(ObjectModel):
 
     @property
     def attr___doc__(self):
-        return node_classes.Const(getattr(self._instance.doc_node, "value", None))
+        doc_node = self._instance.doc_node
+        return node_classes.Const(doc_node.value if doc_node else None)
 
     @property
     def attr___dict__(self):
@@ -1003,7 +1011,9 @@ class PropertyModel(ObjectModel):
                 context: InferenceContext | None = None,
             ) -> Iterator[InferenceResult]:
                 nonlocal func
-                if caller and len(caller.args) != 1:
+                if caller and (
+                    not isinstance(caller, nodes.Call) or len(caller.args) != 1
+                ):
                     raise InferenceError(
                         "fget() needs a single argument", target=self, context=context
                     )
@@ -1054,7 +1064,9 @@ class PropertyModel(ObjectModel):
                 context: InferenceContext | None = None,
             ) -> Iterator[InferenceResult]:
                 nonlocal func_setter
-                if caller and len(caller.args) != 2:
+                if caller and (
+                    not isinstance(caller, nodes.Call) or len(caller.args) != 2
+                ):
                     raise InferenceError(
                         "fset() needs two arguments", target=self, context=context
                     )
