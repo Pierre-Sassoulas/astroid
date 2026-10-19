@@ -6,7 +6,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Iterator, Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -250,7 +250,7 @@ class InferenceError(ResolveError):  # pylint: disable=too-many-instance-attribu
         unknown: InferenceResult | None = None,
         assign_path: list[int] | None = None,
         caller: SuccessfulInferenceResult | None = None,
-        stmts: Iterator[InferenceResult] | None = None,
+        stmts: Iterable[InferenceResult] | None = None,
         frame: InferenceResult | None = None,
         call_site: arguments.CallSite | None = None,
         func: InferenceResult | None = None,
