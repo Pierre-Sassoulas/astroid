@@ -235,10 +235,10 @@ def _infer_slice(
 
 def _container_getitem(
     instance: List | Tuple,
-    elts: list[SuccessfulInferenceResult],
+    elts: list[InferenceResult],
     index: SuccessfulInferenceResult,
     context: InferenceContext | None = None,
-) -> SuccessfulInferenceResult:
+) -> InferenceResult:
     """Get a slice or an item, using the given *index*, for the given sequence."""
     try:
         if isinstance(index, Slice):
@@ -285,7 +285,7 @@ class BaseContainer(_base_nodes.ParentAssignNode, Instance, metaclass=abc.ABCMet
         end_lineno: int | None,
         end_col_offset: int | None,
     ) -> None:
-        self.elts: list[SuccessfulInferenceResult] = []
+        self.elts: list[InferenceResult] = []
         """The elements in the node."""
 
         super().__init__(
@@ -296,7 +296,7 @@ class BaseContainer(_base_nodes.ParentAssignNode, Instance, metaclass=abc.ABCMet
             parent=parent,
         )
 
-    def postinit(self, elts: list[SuccessfulInferenceResult]) -> None:
+    def postinit(self, elts: list[InferenceResult]) -> None:
         self.elts = elts
 
     @classmethod
@@ -317,7 +317,7 @@ class BaseContainer(_base_nodes.ParentAssignNode, Instance, metaclass=abc.ABCMet
         node.elts = [const_factory(e) if _is_const(e) else e for e in elts]
         return node
 
-    def itered(self):
+    def itered(self) -> list[InferenceResult]:
         """An iterator over the elements this node contains.
 
         :returns: The contents of this node.
@@ -339,9 +339,10 @@ class BaseContainer(_base_nodes.ParentAssignNode, Instance, metaclass=abc.ABCMet
         :returns: The name of the type.
         """
 
-    # Inference puts inferred values, such as Instance proxies, in elts, so the
-    # children of a container are wider than those of NodeNG.get_children.
-    def get_children(self) -> Iterator[SuccessfulInferenceResult]:  # type: ignore[override] # pyright: ignore[reportIncompatibleMethodOverride]
+    # Inference puts inferred values, such as Instance proxies or Uninferable,
+    # in elts, so the children of a container are wider than those of
+    # NodeNG.get_children.
+    def get_children(self) -> Iterator[InferenceResult]:  # type: ignore[override] # pyright: ignore[reportIncompatibleMethodOverride]
         yield from self.elts
 
     @decorators.raise_if_nothing_inferred
@@ -366,9 +367,9 @@ class BaseContainer(_base_nodes.ParentAssignNode, Instance, metaclass=abc.ABCMet
 
     def _infer_sequence_helper(
         self, context: InferenceContext | None = None
-    ) -> list[SuccessfulInferenceResult]:
+    ) -> list[InferenceResult]:
         """Infer all values based on BaseContainer.elts."""
-        values: list[SuccessfulInferenceResult] = []
+        values: list[InferenceResult] = []
 
         for elt in self.elts:
             if isinstance(elt, Starred):
@@ -2181,7 +2182,7 @@ class Const(_base_nodes.NoChildrenNode, Instance):
         """
         return False
 
-    def itered(self):
+    def itered(self) -> list[ConstFactoryResult]:
         """An iterator over the elements this node contains.
 
         :returns: The contents of this node.
@@ -2438,7 +2439,7 @@ class Dict(NodeNG, Instance):
             return self.items[-1][1]
         return None
 
-    def itered(self):
+    def itered(self) -> list[InferenceResult]:
         """An iterator over the keys this node contains.
 
         :returns: The keys of this node.
@@ -3365,7 +3366,7 @@ class List(BaseContainer):
 
     def getitem(
         self, index: SuccessfulInferenceResult, context: InferenceContext | None = None
-    ) -> SuccessfulInferenceResult:
+    ) -> InferenceResult:
         """Get an item from this node.
 
         :param index: The node to use as a subscript index.
@@ -4141,7 +4142,7 @@ class Tuple(BaseContainer):
 
     def getitem(
         self, index: SuccessfulInferenceResult, context: InferenceContext | None = None
-    ) -> SuccessfulInferenceResult:
+    ) -> InferenceResult:
         """Get an item from this node.
 
         :param index: The node to use as a subscript index.
@@ -5744,9 +5745,9 @@ CONST_CLS: dict[type, type[NodeNG]] = {
 
 def _create_basic_elements(
     value: Iterable[Any], node: List | Set | Tuple, building: set[int]
-) -> list[SuccessfulInferenceResult]:
+) -> list[InferenceResult]:
     """Create a list of nodes to function as the elements of a new node."""
-    elements: list[SuccessfulInferenceResult] = []
+    elements: list[InferenceResult] = []
     for element in value:
         # NOTE: avoid accessing any attributes of element in the loop.
         element_node = _const_factory(element, building)
