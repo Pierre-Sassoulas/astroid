@@ -10,7 +10,7 @@ Previously these were called Mixin nodes.
 from __future__ import annotations
 
 import itertools
-from collections.abc import Callable, Generator, Iterator
+from collections.abc import Callable, Generator, Iterator, Sequence
 from functools import cached_property, lru_cache, partial
 from typing import TYPE_CHECKING, ClassVar, Self, TypeVar
 
@@ -314,7 +314,7 @@ class LookupMixIn(NodeNG):
     """Mixin to look up a name in the right scope."""
 
     @lru_cache  # noqa
-    def lookup(self, name: str) -> tuple[LocalsDictNodeNG, list[NodeNG]]:
+    def lookup(self, name: str) -> tuple[LocalsDictNodeNG, Sequence[InferenceResult]]:
         """Lookup where the given variable is assigned.
 
         The lookup starts from self's scope. If self is not a frame itself

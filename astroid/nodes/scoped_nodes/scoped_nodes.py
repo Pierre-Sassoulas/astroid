@@ -308,7 +308,7 @@ class Module(LocalsDictNodeNG):
 
     def scope_lookup(
         self, node: LookupMixIn, name: str, offset: int = 0
-    ) -> tuple[LocalsDictNodeNG, list[NodeNG]]:
+    ) -> tuple[LocalsDictNodeNG, Sequence[InferenceResult]]:
         """Lookup where the given variable is assigned.
 
         :param node: The node to look for assignments up to.
@@ -998,7 +998,7 @@ class Lambda(_base_nodes.FilterStmtsBaseNode, LocalsDictNodeNG):
 
     def scope_lookup(
         self, node: LookupMixIn, name: str, offset: int = 0
-    ) -> tuple[LocalsDictNodeNG, list[NodeNG]]:
+    ) -> tuple[LocalsDictNodeNG, Sequence[InferenceResult]]:
         """Lookup where the given names is assigned.
 
         :param node: The node to look for assignments up to.
@@ -1717,7 +1717,7 @@ class FunctionDef(
 
     def scope_lookup(
         self, node: LookupMixIn, name: str, offset: int = 0
-    ) -> tuple[LocalsDictNodeNG, list[nodes.NodeNG]]:
+    ) -> tuple[LocalsDictNodeNG, Sequence[InferenceResult]]:
         """Lookup where the given name is assigned."""
         if name == "__class__":
             # __class__ is an implicit closure reference created by the compiler
@@ -2180,7 +2180,7 @@ class ClassDef(
 
     def scope_lookup(
         self, node: LookupMixIn, name: str, offset: int = 0
-    ) -> tuple[LocalsDictNodeNG, list[nodes.NodeNG]]:
+    ) -> tuple[LocalsDictNodeNG, Sequence[InferenceResult]]:
         """Lookup where the given name is assigned.
 
         :param node: The node to look for assignments up to.

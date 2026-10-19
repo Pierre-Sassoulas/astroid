@@ -6,7 +6,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 from typing import TYPE_CHECKING, Self, overload
 
 from astroid.exceptions import ParentMissingError
@@ -55,7 +55,7 @@ class LocalsDictNodeNG(_base_nodes.LookupMixIn):
 
     def scope_lookup(
         self, node: _base_nodes.LookupMixIn, name: str, offset: int = 0
-    ) -> tuple[LocalsDictNodeNG, list[nodes.NodeNG]]:
+    ) -> tuple[LocalsDictNodeNG, Sequence[InferenceResult]]:
         """Lookup where the given variable is assigned.
 
         :param node: The node to look for assignments up to.
@@ -73,7 +73,7 @@ class LocalsDictNodeNG(_base_nodes.LookupMixIn):
 
     def _scope_lookup(
         self, node: _base_nodes.LookupMixIn, name: str, offset: int = 0
-    ) -> tuple[LocalsDictNodeNG, list[nodes.NodeNG]]:
+    ) -> tuple[LocalsDictNodeNG, Sequence[InferenceResult]]:
         """XXX method for interfacing the scope lookup"""
         try:
             stmts = _filter_stmts(node, self.locals[name], self, offset)
