@@ -53,7 +53,7 @@ class FrozenSet(node_classes.BaseContainer):
         return frozenset_class
 
 
-class Super(node_classes.NodeNG):
+class Super(NodeNG):
     """Proxy class over a super call.
 
     This class offers almost the same behaviour as Python's super,
