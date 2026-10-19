@@ -15,7 +15,7 @@ import typing
 import warnings
 from collections.abc import Callable, Generator, Iterable, Iterator, Mapping, Sequence
 from functools import cached_property
-from typing import TYPE_CHECKING, Any, ClassVar, Literal, Self, Union
+from typing import TYPE_CHECKING, Any, ClassVar, Literal, Self, Union, cast
 
 from astroid import decorators, protocols, util
 from astroid.bases import BaseInstance, Instance, Proxy, _infer_stmts
@@ -5747,7 +5747,7 @@ CONST_CLS: dict[type, type[NodeNG]] = {
 
 
 def _create_basic_elements(
-    value: Iterable[Any], node: List | Set | Tuple, building: set[int]
+    value: Iterable[object], node: List | Set | Tuple, building: set[int]
 ) -> list[InferenceResult]:
     """Create a list of nodes to function as the elements of a new node."""
     elements: list[InferenceResult] = []
@@ -5760,7 +5760,7 @@ def _create_basic_elements(
 
 
 def _create_dict_items(
-    values: Mapping[Any, Any], node: Dict, building: set[int]
+    values: Mapping[object, object], node: Dict, building: set[int]
 ) -> list[tuple[InferenceResult, InferenceResult]]:
     """Create a list of node pairs to function as the items of a new dict node."""
     elements: list[tuple[InferenceResult, InferenceResult]] = []
@@ -5774,12 +5774,12 @@ def _create_dict_items(
     return elements
 
 
-def const_factory(value: Any) -> ConstFactoryResult:
+def const_factory(value: object) -> ConstFactoryResult:
     """Return an astroid node for a python value."""
     return _const_factory(value, set())
 
 
-def _const_factory(value: Any, building: set[int]) -> ConstFactoryResult:
+def _const_factory(value: object, building: set[int]) -> ConstFactoryResult:
     """Return an astroid node for value.
 
     ``building`` holds the ids of the containers whose elements are being
@@ -5822,7 +5822,10 @@ def _const_factory(value: Any, building: set[int]) -> ConstFactoryResult:
             end_lineno=None,
             end_col_offset=None,
         )
-        instance.postinit(_create_basic_elements(value, instance, building))
+        # type(value) is exactly list, set or tuple here; isinstance is avoided
+        # on purpose, see above.
+        elements = cast("Iterable[object]", value)
+        instance.postinit(_create_basic_elements(elements, instance, building))
     else:
         assert issubclass(initializer_cls, Dict)
         instance = initializer_cls(
@@ -5832,6 +5835,8 @@ def _const_factory(value: Any, building: set[int]) -> ConstFactoryResult:
             end_lineno=None,
             end_col_offset=None,
         )
-        instance.postinit(_create_dict_items(value, instance, building))
+        # type(value) is exactly dict here.
+        items = cast("Mapping[object, object]", value)
+        instance.postinit(_create_dict_items(items, instance, building))
     building.remove(value_id)
     return instance
