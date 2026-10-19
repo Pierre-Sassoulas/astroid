@@ -110,7 +110,9 @@ class BooleanConstraint(Constraint):
         - negate=True: satisfied if boolean value is False
         """
         inferred_booleaness = inferred.bool_value()
-        if inferred is util.Uninferable or inferred_booleaness is util.Uninferable:
+        if inferred is util.Uninferable or isinstance(
+            inferred_booleaness, util.UninferableBase
+        ):
             return True
 
         return self.negate ^ inferred_booleaness
@@ -165,7 +167,7 @@ class TypeConstraint(Constraint):
             types = helpers.class_or_tuple_to_container(self.classinfo, context)
             matches_checked_types = helpers.object_isinstance(inferred, types, context)
 
-            if matches_checked_types is util.Uninferable:
+            if isinstance(matches_checked_types, util.UninferableBase):
                 return True
 
             return self.negate ^ matches_checked_types
