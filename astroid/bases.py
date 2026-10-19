@@ -215,7 +215,7 @@ def _infer_method_result_truth(
     # Get the method from the instance and try to infer
     # its return's truth value.
     meth = next(instance.igetattr(method_name, context=context), None)
-    if meth and hasattr(meth, "infer_call_result"):
+    if isinstance(meth, (Proxy, nodes.ClassDef, nodes.FunctionDef, nodes.Lambda)):
         if not meth.callable():
             return Uninferable
         try:
@@ -369,6 +369,12 @@ class Instance(BaseInstance):
         context: InferenceContext,
         method: SuccessfulInferenceResult,
     ) -> Generator[InferenceResult]:
+        if not isinstance(
+            method, (Proxy, nodes.ClassDef, nodes.FunctionDef, nodes.Lambda)
+        ):
+            # The special method is bound to something that cannot be called,
+            # e.g. ``__add__ = some_module``: try the next method of the flow.
+            raise AttributeInferenceError(target=self, attribute=operator)
         return method.infer_call_result(self, context)
 
     def __repr__(self) -> str:

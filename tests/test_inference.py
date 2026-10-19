@@ -7750,6 +7750,36 @@ def test_unary_operation_on_instance_without_special_method() -> None:
     assert isinstance(errors[0].error, AttributeInferenceError)
 
 
+def test_binary_operation_special_method_bound_to_module() -> None:
+    """``__add__`` bound to a module cannot be called: the reflected method is used."""
+    node = _extract_single_node("""
+    import os
+    class A:
+        __add__ = os
+    class B:
+        def __radd__(self, other):
+            return 2
+    A() + B() #@
+    """)
+    inferred = next(node.infer())
+    assert isinstance(inferred, nodes.Const)
+    assert inferred.value == 2
+
+
+def test_binary_operation_metaclass_as_special_method_does_not_crash() -> None:
+    """``type.infer_call_result`` reads ``caller.args`` on the operand instance.
+
+    The ``AttributeError`` safety net around binary operation methods is
+    still needed for this.
+    """
+    node = _extract_single_node("""
+    class A:
+        __add__ = type
+    A() + 1 #@
+    """)
+    assert node.inferred() == [util.Uninferable]
+
+
 def test_attribute_with_metaclass_function_as_property_does_not_crash() -> None:
     """``with_metaclass`` inference reads ``caller.args`` on the instance.
 
@@ -7765,3 +7795,15 @@ def test_attribute_with_metaclass_function_as_property_does_not_crash() -> None:
     """)
     with pytest.raises(InferenceError):
         next(node.infer())
+
+
+def test_binary_operation_metaclass_special_method_bound_to_module() -> None:
+    node = _extract_single_node("""
+    import os
+    class Meta(type):
+        __add__ = os
+    class A(metaclass=Meta):
+        pass
+    A + 1 #@
+    """)
+    assert node.inferred() == [util.Uninferable]

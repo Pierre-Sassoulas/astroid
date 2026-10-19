@@ -121,6 +121,8 @@ class CallSite:
         return values
 
     def _unpack_args(self, args, context: InferenceContext | None = None):
+        from astroid import objects  # pylint: disable=import-outside-toplevel
+
         values = []
         context = context or InferenceContext()
         context.extra_context = self.argument_context_map
@@ -130,7 +132,15 @@ class CallSite:
                 if isinstance(inferred, UninferableBase):
                     values.append(Uninferable)
                     continue
-                if not hasattr(inferred, "elts"):
+                if not isinstance(
+                    inferred,
+                    (
+                        nodes.BaseContainer,
+                        objects.DictItems,
+                        objects.DictKeys,
+                        objects.DictValues,
+                    ),
+                ):
                     values.append(Uninferable)
                     continue
                 values.extend(inferred.elts)

@@ -339,6 +339,12 @@ def instance_class_infer_binary_op(
     context: InferenceContext,
     method: SuccessfulInferenceResult,
 ) -> Generator[InferenceResult]:
+    if not isinstance(
+        method, (bases.Proxy, nodes.ClassDef, nodes.FunctionDef, nodes.Lambda)
+    ):
+        # The special method is bound to something that cannot be called,
+        # e.g. ``__add__ = some_module``: try the next method of the flow.
+        raise AttributeInferenceError(target=self, attribute=operator)
     return method.infer_call_result(self, context)
 
 
@@ -358,12 +364,22 @@ to any intermediary inference necessary.
 
 def _resolve_looppart(parts, assign_path, context):
     """Recursive function to resolve multiple assignments on loops."""
+    from astroid import objects  # pylint: disable=import-outside-toplevel
+
     assign_path = assign_path[:]
     index = assign_path.pop(0)
     for part in parts:
-        if isinstance(part, util.UninferableBase):
-            continue
-        if not hasattr(part, "itered"):
+        if not isinstance(
+            part,
+            (
+                nodes.BaseContainer,
+                nodes.Const,
+                nodes.Dict,
+                objects.DictItems,
+                objects.DictKeys,
+                objects.DictValues,
+            ),
+        ):
             continue
         try:
             itered = part.itered()
@@ -375,10 +391,22 @@ def _resolve_looppart(parts, assign_path, context):
         except IndexError:
             pass
         for stmt in itered:
+            if not isinstance(
+                stmt,
+                (
+                    bases.BaseInstance,
+                    nodes.ClassDef,
+                    objects.DictItems,
+                    objects.DictKeys,
+                    objects.DictValues,
+                ),
+            ):
+                # This element cannot be subscripted, e.g. a ``Name``.
+                continue
             index_node = nodes.Const(index)
             try:
                 assigned = stmt.getitem(index_node, context)
-            except (AttributeError, AstroidTypeError, AstroidIndexError):
+            except (AstroidTypeError, AstroidIndexError):
                 continue
             if not assign_path:
                 # we achieved to resolved the assignment path,
@@ -404,7 +432,9 @@ def for_assigned_stmts(
     context: InferenceContext | None = None,
     assign_path: list[int] | None = None,
 ) -> Any:
-    if isinstance(self, nodes.AsyncFor) or getattr(self, "is_async", False):
+    if isinstance(self, nodes.AsyncFor) or (
+        isinstance(self, nodes.Comprehension) and self.is_async
+    ):
         # Skip inferring of async code for now
         return {
             "node": self,
@@ -473,11 +503,7 @@ def _arguments_infer_argname(
     args = [arg for arg in self.arguments if arg.name not in [self.vararg, self.kwarg]]
     functype = self.parent.type
     # first argument of instance/class method
-    if (
-        args
-        and getattr(self.arguments[0], "name", None) == name
-        and functype != "staticmethod"
-    ):
+    if args and self.arguments[0].name == name and functype != "staticmethod":
         cls = self.parent.parent.scope()
         is_metaclass = isinstance(cls, nodes.ClassDef) and cls.type == "metaclass"
         # If this is a metaclass, then the first argument will always
@@ -501,9 +527,12 @@ def _arguments_infer_argname(
 
     if context and context.callcontext:
         callee = context.callcontext.callee
-        while hasattr(callee, "_proxied"):
+        while isinstance(callee, bases.Proxy):
             callee = callee._proxied
-        if getattr(callee, "name", None) == self.parent.name:
+        if (
+            isinstance(callee, (nodes.FunctionDef, nodes.Lambda))
+            and callee.name == self.parent.name
+        ):
             call_site = arguments.CallSite(context.callcontext, context.extra_context)
             yield from call_site.infer_argument(self.parent, name, context)
             return
@@ -539,20 +568,21 @@ def arguments_assigned_stmts(
 ) -> Any:
     from astroid import arguments  # pylint: disable=import-outside-toplevel
 
-    try:
-        node_name = node.name  # type: ignore[union-attr]
-    except AttributeError:
-        # Added to handle edge cases where node.name is not defined.
-        # https://github.com/pylint-dev/astroid/pull/1644#discussion_r901545816
-        node_name = None  # pragma: no cover
+    # ``node`` may be missing, see
+    # https://github.com/pylint-dev/astroid/pull/1644#discussion_r901545816
+    node_name = node.name if isinstance(node, nodes.AssignName) else None
 
     if context and context.callcontext:
         callee = context.callcontext.callee
-        while hasattr(callee, "_proxied"):
+        while isinstance(callee, bases.Proxy):
             callee = callee._proxied
     else:
         return _arguments_infer_argname(self, node_name, context)
-    if node and getattr(callee, "name", None) == node.frame().name:
+    if (
+        node
+        and isinstance(callee, (nodes.FunctionDef, nodes.Lambda))
+        and callee.name == node.frame().name
+    ):
         # reset call context/name
         callcontext = context.callcontext
         context = copy_context(context)
@@ -709,6 +739,8 @@ def infer_instance_from_annotation(
 
 def _resolve_assignment_parts(parts, assign_path, context):
     """Recursive function to resolve multiple assignments."""
+    from astroid import objects  # pylint: disable=import-outside-toplevel
+
     assign_path = assign_path[:]
     index = assign_path.pop(0)
     for part in parts:
@@ -720,7 +752,16 @@ def _resolve_assignment_parts(parts, assign_path, context):
             except IndexError:
                 return
 
-        elif hasattr(part, "getitem"):
+        elif isinstance(
+            part,
+            (
+                bases.BaseInstance,
+                nodes.ClassDef,
+                objects.DictItems,
+                objects.DictKeys,
+                objects.DictValues,
+            ),
+        ):
             index_node = nodes.Const(index)
             try:
                 assigned = part.getitem(index_node, context)
@@ -857,6 +898,8 @@ def with_assigned_stmts(
             A list of indices, where each index specifies what item to fetch from
             the inference results.
     """
+    from astroid import objects  # pylint: disable=import-outside-toplevel
+
     try:
         mgr = next(mgr for (mgr, vars) in self.items if vars == node)
     except StopIteration:
@@ -868,7 +911,15 @@ def with_assigned_stmts(
             # Walk the assign_path and get the item at the final index.
             obj = result
             for index in assign_path:
-                if not hasattr(obj, "elts"):
+                if not isinstance(
+                    obj,
+                    (
+                        nodes.BaseContainer,
+                        objects.DictItems,
+                        objects.DictKeys,
+                        objects.DictValues,
+                    ),
+                ):
                     raise InferenceError(
                         "Wrong type ({targets!r}) for {node!r} assignment",
                         node=self,
@@ -939,8 +990,8 @@ def starred_assigned_stmts(  # noqa: C901
             A list of indices, where each index specifies what item to fetch from
             the inference results.
     """
-
     # pylint: disable = too-many-locals, too-many-statements, too-many-branches
+    from astroid import objects  # pylint: disable=import-outside-toplevel
 
     def _determine_starred_iteration_lookups(
         starred: nodes.Starred, target: nodes.Tuple, lookups: list[tuple[int, int]]
@@ -989,7 +1040,17 @@ def starred_assigned_stmts(  # noqa: C901
         except (InferenceError, StopIteration):
             yield util.Uninferable
             return
-        if isinstance(rhs, util.UninferableBase) or not hasattr(rhs, "itered"):
+        if not isinstance(
+            rhs,
+            (
+                nodes.BaseContainer,
+                nodes.Const,
+                nodes.Dict,
+                objects.DictItems,
+                objects.DictKeys,
+                objects.DictValues,
+            ),
+        ):
             yield util.Uninferable
             return
 
@@ -1037,8 +1098,16 @@ def starred_assigned_stmts(  # noqa: C901
         except (InferenceError, StopIteration):
             yield util.Uninferable
             return
-        if isinstance(inferred_iterable, util.UninferableBase) or not hasattr(
-            inferred_iterable, "itered"
+        if not isinstance(
+            inferred_iterable,
+            (
+                nodes.BaseContainer,
+                nodes.Const,
+                nodes.Dict,
+                objects.DictItems,
+                objects.DictKeys,
+                objects.DictValues,
+            ),
         ):
             yield util.Uninferable
             return
@@ -1092,7 +1161,18 @@ def starred_assigned_stmts(  # noqa: C901
 
             found_element = None
             for index, lookup in enumerate(lookups):
-                if not hasattr(element, "itered"):
+                if not isinstance(
+                    element,
+                    (
+                        nodes.BaseContainer,
+                        nodes.Const,
+                        nodes.Dict,
+                        objects.DictItems,
+                        objects.DictKeys,
+                        objects.DictValues,
+                        util.UninferableBase,
+                    ),
+                ):
                     break
                 if index + 1 is len(lookups):
                     cur_lookup: slice | int = last_lookup
