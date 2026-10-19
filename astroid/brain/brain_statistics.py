@@ -34,7 +34,8 @@ def _looks_like_statistics_quantiles(node: nodes.Call) -> bool:
             # Check if quantiles was imported from statistics
             try:
                 frame = node.frame()
-                if "quantiles" in frame.locals:
+                # A lambda body is a single expression, with no imports.
+                if "quantiles" in frame.locals and not isinstance(frame, nodes.Lambda):
                     # Look for import from statistics
                     for stmt in frame.body:
                         if (

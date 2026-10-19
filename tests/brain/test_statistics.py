@@ -9,6 +9,7 @@ from __future__ import annotations
 import unittest
 
 from astroid import extract_node
+from astroid.brain.brain_statistics import _looks_like_statistics_quantiles
 from astroid.util import Uninferable
 
 
@@ -45,6 +46,24 @@ class StatisticsBrainTest(unittest.TestCase):
         inferred = list(call_node.infer())
         self.assertEqual(len(inferred), 1)
         self.assertIs(inferred[0], Uninferable)
+
+    def test_statistics_quantiles_imported_from_statistics(self) -> None:
+        """Test a quantiles() call imported with ``from statistics import``."""
+        node = extract_node("""
+        from statistics import quantiles
+        quantiles([1, 2, 3, 4, 5], n=4)  #@
+        """)
+        inferred = list(node.infer())
+        self.assertEqual(len(inferred), 1)
+        self.assertIs(inferred[0], Uninferable)
+
+    def test_quantiles_lambda_parameter_not_affected(self) -> None:
+        """Test that a lambda parameter named quantiles is not the statistics one."""
+        node = extract_node("""
+        apple = lambda quantiles: quantiles()  #@
+        """)
+        call = node.value.body
+        self.assertFalse(_looks_like_statistics_quantiles(call))
 
     def test_other_statistics_functions_not_affected(self) -> None:
         """Test that other statistics functions are not affected by our brain module."""
