@@ -7,7 +7,8 @@ from __future__ import annotations
 import unittest
 
 from astroid import builder, nodes, util
-from astroid.exceptions import AttributeInferenceError
+from astroid.brain.brain_namedtuple_enum import infer_typing_namedtuple
+from astroid.exceptions import AttributeInferenceError, UseInferenceDefault
 
 
 class NamedTupleTest(unittest.TestCase):
@@ -326,6 +327,22 @@ class NamedTupleTest(unittest.TestCase):
         inferred = next(node.infer())
         assert isinstance(inferred, nodes.ClassDef)
         assert inferred.getattr("_fields")[0].statement().value.as_string() == "('x', )"
+
+    def test_non_string_typename_does_not_crash_inference(self) -> None:
+        node = builder.extract_node("""
+        from collections import namedtuple
+        namedtuple(1, "a b")  #@
+        """)
+        inferred = next(node.infer())
+        self.assertIs(util.Uninferable, inferred)
+
+    def test_uninferable_namedtuple_function_is_not_typing(self) -> None:
+        node = builder.extract_node("""
+        from unknown_module import NamedTuple
+        NamedTuple("Point", [("x", int)])  #@
+        """)
+        with self.assertRaises(UseInferenceDefault):
+            next(infer_typing_namedtuple(node))
 
     def test_name_as_typename(self) -> None:
         """Reported in https://github.com/pylint-dev/pylint/issues/7429 as a crash."""
