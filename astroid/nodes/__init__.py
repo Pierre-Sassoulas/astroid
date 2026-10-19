@@ -66,7 +66,6 @@ from astroid.nodes.node_classes import (
     MatchValue,
     Name,
     NamedExpr,
-    NodeNG,
     Nonlocal,
     ParamSpec,
     Pass,
@@ -94,6 +93,7 @@ from astroid.nodes.node_classes import (
     const_factory,
     unpack_infer,
 )
+from astroid.nodes.node_ng import NodeNG
 from astroid.nodes.scoped_nodes import (
     SYNTHETIC_ROOT,
     AsyncFunctionDef,
