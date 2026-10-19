@@ -1300,7 +1300,7 @@ class AnnAssign(_base_nodes.AssignTypeNode, _base_nodes.Statement):
     _astroid_fields = ("target", "annotation", "value")
     _other_fields = ("simple",)
 
-    target: Name | Attribute | Subscript
+    target: AssignName | AssignAttr | Subscript
     """What is being assigned to."""
 
     annotation: NodeNG
@@ -1314,7 +1314,7 @@ class AnnAssign(_base_nodes.AssignTypeNode, _base_nodes.Statement):
 
     def postinit(
         self,
-        target: Name | Attribute | Subscript,
+        target: AssignName | AssignAttr | Subscript,
         annotation: NodeNG,
         simple: int,
         value: NodeNG | None,
@@ -1353,7 +1353,7 @@ class AugAssign(
     _astroid_fields = ("target", "value")
     _other_fields = ("op",)
 
-    target: Name | Attribute | Subscript
+    target: AssignName | AssignAttr | Subscript
     """What is being assigned to."""
 
     value: NodeNG
@@ -1383,7 +1383,9 @@ class AugAssign(
             parent=parent,
         )
 
-    def postinit(self, target: Name | Attribute | Subscript, value: NodeNG) -> None:
+    def postinit(
+        self, target: AssignName | AssignAttr | Subscript, value: NodeNG
+    ) -> None:
         self.target = target
         self.value = value
 
