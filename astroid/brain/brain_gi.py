@@ -14,6 +14,7 @@ import inspect
 import itertools
 import re
 import sys
+import types
 import warnings
 
 from astroid import nodes
@@ -21,7 +22,7 @@ from astroid.builder import AstroidBuilder
 from astroid.exceptions import AstroidBuildingError
 from astroid.manager import AstroidManager
 
-_inspected_modules = {}
+_inspected_modules: dict[str, nodes.Module | None] = {}
 
 _identifier_re = r"^[A-Za-z_]\w*$"
 
@@ -54,11 +55,11 @@ _special_methods = frozenset(
 )
 
 
-def _gi_supports_inspect_signature():
+def _gi_supports_inspect_signature() -> bool:
     """
     Indicates if pygobject supports inspect.signature().
     """
-    import gi
+    import gi  # pyright: ignore[reportMissingImports]
 
     try:
         # inspect.signature() is supported since pygobject==3.51.0 (ee9558e4).
@@ -69,12 +70,14 @@ def _gi_supports_inspect_signature():
     return False
 
 
-def _gi_is_method_call(obj):
+def _gi_is_method_call(obj: object) -> bool:
     if _gi_supports_inspect_signature():
         # Since inspect.signature() is supported, the workaround to use
         # inspect.ismethoddescriptor() was disabled and cannot be used anymore
         # to tell apart functions from methods.
         # See https://github.com/pylint-dev/astroid/issues/2594
+        if not callable(obj):
+            return False
         try:
             sig = str(inspect.signature(obj))
             return sig == "(self)" or sig.startswith("(self, ")
@@ -83,7 +86,7 @@ def _gi_is_method_call(obj):
     return inspect.ismethod(obj) or inspect.ismethoddescriptor(obj)
 
 
-def _gi_build_stub(parent):  # noqa: C901
+def _gi_build_stub(parent: types.ModuleType | type) -> str:  # noqa: C901
     """
     Inspect the passed module recursively and build stubs for functions,
     classes, etc.
@@ -92,7 +95,7 @@ def _gi_build_stub(parent):  # noqa: C901
 
     classes = {}
     functions = {}
-    constants = {}
+    constants: dict[str, int | str] = {}
     methods = {}
     for name in dir(parent):
         if name.startswith("__") and name not in _special_methods:
@@ -205,7 +208,7 @@ def _gi_build_stub(parent):  # noqa: C901
     return ret
 
 
-def _import_gi_module(modname):
+def _import_gi_module(modname: str) -> nodes.Module:
     # we only consider gi.repository submodules
     if not modname.startswith("gi.repository."):
         raise AstroidBuildingError(modname=modname)
@@ -231,7 +234,7 @@ def _import_gi_module(modname):
                         # Just inspecting the code can raise gi deprecation
                         # warnings, so ignore them.
                         try:
-                            from gi import (  # pylint:disable=import-error
+                            from gi import (  # pyright: ignore[reportMissingImports] # pylint:disable=import-error
                                 PyGIDeprecationWarning,
                                 PyGIWarning,
                             )
@@ -258,7 +261,7 @@ def _import_gi_module(modname):
     return astng
 
 
-def _looks_like_require_version(node) -> bool:
+def _looks_like_require_version(node: nodes.Call) -> bool:
     # Return whether this looks like a call to gi.require_version(<name>, <version>)
     # Only accept function calls with two constant arguments
     if len(node.args) != 2:
@@ -299,12 +302,15 @@ def _looks_like_require_version(node) -> bool:
     return False
 
 
-def _register_require_version(node):
+def _register_require_version(node: nodes.Call) -> nodes.Call:
     # Load the gi.require_version locally
     try:
-        import gi
+        import gi  # pyright: ignore[reportMissingImports]
 
-        gi.require_version(node.args[0].value, node.args[1].value)
+        name, version = node.args
+        # Checked by _looks_like_require_version()
+        assert isinstance(name, nodes.Const) and isinstance(version, nodes.Const)
+        gi.require_version(name.value, version.value)
     except Exception:  # pylint:disable=broad-except
         pass
 
