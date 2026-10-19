@@ -15,7 +15,7 @@ import itertools
 import os
 from collections.abc import Generator, Iterable, Iterator, Sequence
 from functools import cached_property, lru_cache
-from typing import TYPE_CHECKING, ClassVar, Literal, NoReturn, Self
+from typing import TYPE_CHECKING, ClassVar, Literal, NoReturn, Self, TypeGuard
 
 from astroid import bases, protocols, util
 from astroid.context import (
@@ -63,17 +63,20 @@ BUILTIN_DESCRIPTORS = frozenset(
 )
 
 
-def _c3_merge(sequences, cls, context):
+def _c3_merge(
+    sequences: list[list[ClassDef]], cls: ClassDef, context: InferenceContext | None
+) -> list[ClassDef]:
     """Merges MROs in *sequences* to a single MRO using the C3 algorithm.
 
     Adapted from http://www.python.org/download/releases/2.3/mro/.
 
     """
-    result = []
+    result: list[ClassDef] = []
     while True:
         sequences = [s for s in sequences if s]  # purge empty sequences
         if not sequences:
             return result
+        candidate: ClassDef | None = None
         for s1 in sequences:  # find merge candidates among seq heads
             candidate = s1[0]
             for s2 in sequences:
@@ -98,7 +101,6 @@ def _c3_merge(sequences, cls, context):
         for seq in sequences:
             if seq[0] == candidate:
                 del seq[0]
-    return None
 
 
 def clean_typing_generic_mro(sequences: list[list[ClassDef]]) -> None:
@@ -157,7 +159,9 @@ def clean_duplicates_mro(
     return sequences
 
 
-def function_to_method(n, klass):
+def function_to_method(
+    n: InferenceResult, klass: SuccessfulInferenceResult
+) -> InferenceResult:
     if isinstance(n, FunctionDef):
         if n.type == "classmethod":
             return bases.BoundMethod(n, klass)
@@ -171,7 +175,7 @@ def function_to_method(n, klass):
 def _infer_last(
     arg: SuccessfulInferenceResult, context: InferenceContext
 ) -> InferenceResult:
-    res = util.Uninferable
+    res: InferenceResult = util.Uninferable
     for b in arg.infer(context=context.clone()):
         res = b
     return res
@@ -195,8 +199,8 @@ class Module(LocalsDictNodeNG):
 
     # attributes below are set by the builder module or by raw factories
 
-    file_bytes: str | bytes | None = None
-    """The string/bytes that this ast was built from."""
+    file_bytes: bytes | None = None
+    """The bytes that this ast was built from."""
 
     file_encoding: str | None = None
     """The encoding of the source file."""
@@ -273,13 +277,11 @@ class Module(LocalsDictNodeNG):
 
     # pylint: enable=redefined-builtin
 
-    def postinit(
-        self, body: list[node_classes.NodeNG], *, doc_node: Const | None = None
-    ):
+    def postinit(self, body: list[NodeNG], *, doc_node: Const | None = None) -> None:
         self.body = body
         self.doc_node = doc_node
 
-    def _get_stream(self):
+    def _get_stream(self) -> io.BytesIO | io.BufferedReader | None:
         if self.file_bytes is not None:
             return io.BytesIO(self.file_bytes)
         if self.file is not None:
@@ -288,7 +290,7 @@ class Module(LocalsDictNodeNG):
             return stream
         return None
 
-    def stream(self):
+    def stream(self) -> io.BytesIO | io.BufferedReader | None:
         """Get a stream to the underlying file or bytes.
 
         :type: io.IOBase or io.BytesIO or None
@@ -306,7 +308,7 @@ class Module(LocalsDictNodeNG):
 
     def scope_lookup(
         self, node: LookupMixIn, name: str, offset: int = 0
-    ) -> tuple[LocalsDictNodeNG, list[node_classes.NodeNG]]:
+    ) -> tuple[LocalsDictNodeNG, list[NodeNG]]:
         """Lookup where the given variable is assigned.
 
         :param node: The node to look for assignments up to.
@@ -408,14 +410,14 @@ class Module(LocalsDictNodeNG):
         """
         raise StatementMissing(target=self)
 
-    def previous_sibling(self):
+    def previous_sibling(self) -> None:
         """The previous sibling statement.
 
         :returns: The previous sibling statement node.
         :rtype: NodeNG or None
         """
 
-    def next_sibling(self):
+    def next_sibling(self) -> None:
         """The next sibling statement node.
 
         :returns: The next sibling statement node.
@@ -517,7 +519,7 @@ class Module(LocalsDictNodeNG):
             return f"{package_name}.{modname}"
         return modname
 
-    def wildcard_import_names(self):
+    def wildcard_import_names(self) -> list[str]:
         """The list of imported names when this module is 'wildcard imported'.
 
         It doesn't include the '__builtins__' name which is added by the
@@ -544,7 +546,7 @@ class Module(LocalsDictNodeNG):
             return default
 
         # Try our best to detect the exported name.
-        inferred = []
+        inferred: list[str] = []
         try:
             explicit = next(explicit.infer())
         except (InferenceError, StopIteration):
@@ -552,7 +554,7 @@ class Module(LocalsDictNodeNG):
         if not isinstance(explicit, (node_classes.Tuple, node_classes.List)):
             return default
 
-        def str_const(node) -> bool:
+        def str_const(node: InferenceResult) -> TypeGuard[node_classes.Const]:
             return isinstance(node, node_classes.Const) and isinstance(node.value, str)
 
         for node in explicit.elts:
@@ -567,7 +569,7 @@ class Module(LocalsDictNodeNG):
                     inferred.append(inferred_node.value)
         return inferred
 
-    def public_names(self):
+    def public_names(self) -> list[str]:
         """The list of the names that are publicly available in this module.
 
         :returns: The list of public names.
@@ -583,7 +585,7 @@ class Module(LocalsDictNodeNG):
         """
         return True
 
-    def get_children(self):
+    def get_children(self) -> Iterator[NodeNG]:
         yield from self.body
 
     def frame(self, *, future: Literal[None, True] = None) -> Self:
@@ -601,7 +603,7 @@ class Module(LocalsDictNodeNG):
 
 
 class __SyntheticRoot(Module):
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__("__astroid_synthetic", pure_python=False)
 
 
@@ -657,7 +659,7 @@ class GeneratorExp(ComprehensionScope):
         """
         return True
 
-    def get_children(self):
+    def get_children(self) -> Iterator[NodeNG]:
         yield self.elt
 
         yield from self.generators
@@ -707,7 +709,9 @@ class DictComp(ComprehensionScope):
         self.value = value
         self.generators = generators
 
-    def bool_value(self, context: InferenceContext | None = None):
+    def bool_value(
+        self, context: InferenceContext | None = None
+    ) -> util.UninferableBase:
         """Determine the boolean value of this node.
 
         :returns: The boolean value of this node.
@@ -716,7 +720,7 @@ class DictComp(ComprehensionScope):
         """
         return util.Uninferable
 
-    def get_children(self):
+    def get_children(self) -> Iterator[NodeNG]:
         yield self.key
         yield self.value
 
@@ -764,7 +768,9 @@ class SetComp(ComprehensionScope):
         self.elt = elt
         self.generators = generators
 
-    def bool_value(self, context: InferenceContext | None = None):
+    def bool_value(
+        self, context: InferenceContext | None = None
+    ) -> util.UninferableBase:
         """Determine the boolean value of this node.
 
         :returns: The boolean value of this node.
@@ -773,7 +779,7 @@ class SetComp(ComprehensionScope):
         """
         return util.Uninferable
 
-    def get_children(self):
+    def get_children(self) -> Iterator[NodeNG]:
         yield self.elt
 
         yield from self.generators
@@ -817,11 +823,13 @@ class ListComp(ComprehensionScope):
             parent=parent,
         )
 
-    def postinit(self, elt: NodeNG, generators: list[nodes.Comprehension]):
+    def postinit(self, elt: NodeNG, generators: list[nodes.Comprehension]) -> None:
         self.elt = elt
         self.generators = generators
 
-    def bool_value(self, context: InferenceContext | None = None):
+    def bool_value(
+        self, context: InferenceContext | None = None
+    ) -> util.UninferableBase:
         """Determine the boolean value of this node.
 
         :returns: The boolean value of this node.
@@ -830,7 +838,7 @@ class ListComp(ComprehensionScope):
         """
         return util.Uninferable
 
-    def get_children(self):
+    def get_children(self) -> Iterator[NodeNG]:
         yield self.elt
 
         yield from self.generators
@@ -1023,7 +1031,7 @@ class Lambda(_base_nodes.FilterStmtsBaseNode, LocalsDictNodeNG):
         """
         return True
 
-    def get_children(self):
+    def get_children(self) -> Iterator[NodeNG]:
         yield self.args
         yield self.body
 
@@ -1054,7 +1062,7 @@ class Lambda(_base_nodes.FilterStmtsBaseNode, LocalsDictNodeNG):
     def _infer(self, context: InferenceContext | None = None) -> Generator[Lambda]:
         yield self
 
-    def _get_yield_nodes_skip_functions(self):
+    def _get_yield_nodes_skip_functions(self) -> Iterator[nodes.Yield]:
         """A Lambda node can contain a Yield node in the body."""
         yield from self.body._get_yield_nodes_skip_functions()
 
@@ -1146,7 +1154,7 @@ class FunctionDef(
         self.locals = {}
         """A map of the name of a local variable to the node defining it."""
 
-        self.body: list[NodeNG] = []
+        self.body: list[node_classes.NodeNG] = []
         """The contents of the function body."""
 
         self.type_params: list[nodes.TypeVar | nodes.ParamSpec | nodes.TypeVarTuple] = (
@@ -1181,7 +1189,7 @@ class FunctionDef(
         type_params: (
             list[nodes.TypeVar | nodes.ParamSpec | nodes.TypeVarTuple] | None
         ) = None,
-    ):
+    ) -> None:
         """Do some setup after initialisation.
 
         :param args: The arguments that the function takes.
@@ -1683,7 +1691,7 @@ class FunctionDef(
         """
         return True
 
-    def get_children(self):
+    def get_children(self) -> Iterator[NodeNG]:
         if self.decorators is not None:
             yield self.decorators
 
@@ -1921,7 +1929,7 @@ class ClassDef(
         self.bases: list[SuccessfulInferenceResult] = []
         """What the class inherits from."""
 
-        self.body: list[NodeNG] = []
+        self.body: list[node_classes.NodeNG] = []
         """The contents of the class body."""
 
         self.name = name
@@ -2834,7 +2842,7 @@ class ClassDef(
 
         def grouped_slots(
             mro: list[ClassDef],
-        ) -> Iterator[node_classes.NodeNG | None]:
+        ) -> Iterator[NodeNG | None]:
             for cls in mro:
                 # Not interested in object, since it can't have slots.
                 if cls.qname() == "builtins.object":
