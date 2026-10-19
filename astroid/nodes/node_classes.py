@@ -9,6 +9,7 @@ from __future__ import annotations
 import abc
 import ast
 import builtins
+import enum
 import itertools
 import operator
 import typing
@@ -185,17 +186,23 @@ def are_exclusive(stmt1, stmt2, exceptions: list[str] | None = None) -> bool:
 
 # getitem() helpers.
 
-_SLICE_SENTINEL = object()
+
+class _SliceSentinel(enum.Enum):
+    SENTINEL = enum.auto()
+
+
+_SLICE_SENTINEL = _SliceSentinel.SENTINEL
 
 
 def _slice_value(
     index: NodeNG | None, context: InferenceContext | None = None
-) -> object:
+) -> int | Literal[_SliceSentinel.SENTINEL] | None:
     """Get the value of the given slice index."""
 
     if isinstance(index, Const):
         if isinstance(index.value, (int, type(None))):
-            return index.value
+            value: int | None = index.value
+            return value
     elif index is None:
         return None
     else:
@@ -209,7 +216,8 @@ def _slice_value(
         else:
             if isinstance(inferred, Const):
                 if isinstance(inferred.value, (int, type(None))):
-                    return inferred.value
+                    inferred_value: int | None = inferred.value
+                    return inferred_value
 
     # Use a sentinel, because None can be a valid
     # value that this function can return,
@@ -219,11 +227,15 @@ def _slice_value(
 
 def _infer_slice(
     node: Slice, context: InferenceContext | None = None
-) -> slice[object, object, object]:
+) -> slice[int | None, int | None, int | None]:
     lower = _slice_value(node.lower, context)
     upper = _slice_value(node.upper, context)
     step = _slice_value(node.step, context)
-    if all(elem is not _SLICE_SENTINEL for elem in (lower, upper, step)):
+    if (
+        lower is not _SLICE_SENTINEL
+        and upper is not _SLICE_SENTINEL
+        and step is not _SLICE_SENTINEL
+    ):
         return slice(lower, upper, step)
 
     raise AstroidTypeError(
@@ -249,7 +261,8 @@ def _container_getitem(
             new_cls.parent = instance.parent
             return new_cls
         if isinstance(index, Const):
-            return elts[index.value]
+            item: InferenceResult = elts[index.value]
+            return item
     except ValueError as exc:
         raise AstroidValueError(
             message="Slice {index!r} cannot index container",
