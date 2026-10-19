@@ -5,6 +5,11 @@
 import pytest
 
 from astroid import bases, builder, nodes
+from astroid.brain.brain_typing import (
+    infer_typing_attr,
+    infer_typing_typevar_or_newtype,
+)
+from astroid.exceptions import UseInferenceDefault
 
 
 def test_infer_typevar() -> None:
@@ -34,6 +39,33 @@ def test_infer_typevar_name_injection() -> None:
     # The name is kept verbatim instead of parsed, so no base is injected.
     assert inferred.name == "T(EvilBase): #"
     assert inferred.bases == []
+
+
+@pytest.mark.parametrize(
+    "code",
+    [
+        "from unknown_module import TypeVar",
+        "def TypeVar(name): ...",
+    ],
+)
+def test_typevar_not_from_typing(code: str) -> None:
+    """A TypeVar() call is left to normal inference unless TypeVar is typing's."""
+    call_node = builder.extract_node(f"""
+    {code}
+    TypeVar('T')  #@
+    """)
+    with pytest.raises(UseInferenceDefault):
+        next(infer_typing_typevar_or_newtype(call_node))
+
+
+def test_uninferable_subscript_is_not_typing() -> None:
+    """A subscript of an uninferable name is left to normal inference."""
+    subscript = builder.extract_node("""
+    from unknown_module import List
+    List[int]  #@
+    """)
+    with pytest.raises(UseInferenceDefault):
+        next(infer_typing_attr(subscript))
 
 
 class TestTypingAlias:

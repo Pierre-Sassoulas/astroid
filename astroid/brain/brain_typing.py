@@ -8,13 +8,13 @@ from __future__ import annotations
 
 import textwrap
 import typing
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from functools import partial
-from typing import Final
+from typing import Concatenate, Final, ParamSpec
 
-from astroid import context, nodes
+from astroid import bases, context, nodes
 from astroid.brain.helpers import register_module_extender
-from astroid.builder import AstroidBuilder, _extract_single_node, extract_node
+from astroid.builder import AstroidBuilder, _extract_single_node
 from astroid.const import PY312_PLUS, PY313_PLUS, PY314_PLUS, PY315_PLUS
 from astroid.exceptions import (
     AstroidSyntaxError,
@@ -24,6 +24,9 @@ from astroid.exceptions import (
 )
 from astroid.inference_tip import inference_tip
 from astroid.manager import AstroidManager
+from astroid.typing import InferenceResult
+
+_P = ParamSpec("_P")
 
 TYPING_TYPEVARS = {"TypeVar", "NewType"}
 TYPING_TYPEVARS_QUALIFIED: Final = {
@@ -98,7 +101,7 @@ def __class_getitem__(cls, item):
 """
 
 
-def looks_like_typing_typevar_or_newtype(node) -> bool:
+def looks_like_typing_typevar_or_newtype(node: nodes.Call) -> bool:
     func = node.func
     if isinstance(func, nodes.Attribute):
         return func.attrname in TYPING_TYPEVARS
@@ -109,14 +112,17 @@ def looks_like_typing_typevar_or_newtype(node) -> bool:
 
 def infer_typing_typevar_or_newtype(
     node: nodes.Call, context_itton: context.InferenceContext | None = None
-) -> Iterator[nodes.ClassDef]:
+) -> Iterator[InferenceResult]:
     """Infer a typing.TypeVar(...) or typing.NewType(...) call."""
     try:
         func = next(node.func.infer(context=context_itton))
     except (InferenceError, StopIteration) as exc:
         raise UseInferenceDefault from exc
 
-    if func.qname() not in TYPING_TYPEVARS_QUALIFIED:
+    if (
+        not isinstance(func, (nodes.LocalsDictNodeNG, bases.Proxy))
+        or func.qname() not in TYPING_TYPEVARS_QUALIFIED
+    ):
         raise UseInferenceDefault
     if not node.args:
         raise UseInferenceDefault
@@ -130,14 +136,15 @@ def infer_typing_typevar_or_newtype(
         # template: a crafted value such as ``"T(Base): #"`` would break out of
         # the identifier position and inject bases and a body into the class.
         # Build the class with a fixed name and assign the real one afterwards.
-        node = extract_node(TYPING_TYPE_TEMPLATE.format("_TypeVar"))
+        class_node = _extract_single_node(TYPING_TYPE_TEMPLATE.format("_TypeVar"))
     except AstroidSyntaxError as exc:
         raise InferenceError from exc
-    node.name = typename
-    return node.infer(context=context_itton)
+    assert isinstance(class_node, nodes.ClassDef)
+    class_node.name = typename
+    return class_node.infer(context=context_itton)
 
 
-def _looks_like_typing_subscript(node) -> bool:
+def _looks_like_typing_subscript(node: nodes.NodeNG) -> bool:
     """Try to figure out if a Subscript node *might* be a typing-related subscript."""
     if isinstance(node, nodes.Name):
         return node.name in TYPING_MEMBERS
@@ -150,14 +157,18 @@ def _looks_like_typing_subscript(node) -> bool:
 
 def infer_typing_attr(
     node: nodes.Subscript, ctx: context.InferenceContext | None = None
-) -> Iterator[nodes.ClassDef]:
+) -> Iterator[InferenceResult]:
     """Infer a typing.X[...] subscript."""
     try:
-        value = next(node.value.infer())  # type: ignore[union-attr] # value shouldn't be None for Subscript.
+        value = next(node.value.infer())
     except (InferenceError, StopIteration) as exc:
         raise UseInferenceDefault from exc
 
-    if not value.qname().startswith("typing.") or value.qname() in TYPING_ALIAS:
+    if (
+        not isinstance(value, (nodes.LocalsDictNodeNG, bases.Proxy))
+        or not value.qname().startswith("typing.")
+        or value.qname() in TYPING_ALIAS
+    ):
         # If typing subscript belongs to an alias handle it separately.
         raise UseInferenceDefault
 
@@ -194,8 +205,10 @@ def infer_typing_attr(
         node._explicit_inference = lambda node, context: iter([value])
         return iter([value])
 
-    node = extract_node(TYPING_TYPE_TEMPLATE.format(value.qname().split(".")[-1]))
-    return node.infer(context=ctx)
+    class_node = _extract_single_node(
+        TYPING_TYPE_TEMPLATE.format(value.qname().split(".")[-1])
+    )
+    return class_node.infer(context=ctx)
 
 
 def _looks_like_generic_class_pep695(node: nodes.ClassDef) -> bool:
@@ -223,6 +236,9 @@ def infer_typedDict(  # pylint: disable=invalid-name
     node: nodes.FunctionDef, ctx: context.InferenceContext | None = None
 ) -> Iterator[nodes.ClassDef]:
     """Replace TypedDict FunctionDef with ClassDef."""
+    # The TypedDict function comes from the parsed typing module
+    assert node.lineno is not None and node.col_offset is not None
+    assert node.parent is not None
     class_def = nodes.ClassDef(
         name="TypedDict",
         lineno=node.lineno,
@@ -231,7 +247,7 @@ def infer_typedDict(  # pylint: disable=invalid-name
         end_lineno=node.end_lineno,
         end_col_offset=node.end_col_offset,
     )
-    class_def.postinit(bases=[extract_node("dict")], body=[], decorators=None)
+    class_def.postinit(bases=[_extract_single_node("dict")], body=[], decorators=None)
     func_to_add = _extract_single_node("dict")
     class_def.locals["__call__"] = [func_to_add]
     # TypedDict subclasses have ``__required_keys__`` and ``__optional_keys__``
@@ -268,7 +284,12 @@ def _looks_like_typing_alias(node: nodes.Call) -> bool:
 def _forbid_class_getitem_access(node: nodes.ClassDef) -> None:
     """Disable the access to __class_getitem__ method for the node in parameters."""
 
-    def full_raiser(origin_func, attr, *args, **kwargs):
+    def full_raiser(
+        origin_func: Callable[Concatenate[str, _P], list[InferenceResult]],
+        attr: str,
+        *args: _P.args,
+        **kwargs: _P.kwargs,
+    ) -> list[InferenceResult]:
         """
         Raises an AttributeInferenceError in case of access to __class_getitem__ method.
         Otherwise, just call origin_func.
@@ -284,7 +305,7 @@ def _forbid_class_getitem_access(node: nodes.ClassDef) -> None:
         # collections module) whereas the typing module considers it should not.
         # We do not want __class_getitem__ to be found in the classdef
         partial_raiser = partial(full_raiser, node.getattr)
-        node.getattr = partial_raiser
+        node.getattr = partial_raiser  # type: ignore[method-assign]
     except AttributeInferenceError:
         pass
 
@@ -314,6 +335,8 @@ def infer_typing_alias(
         raise InferenceError(node=node.args[0], context=ctx) from e
 
     assign_name = node.parent.targets[0]
+    # The alias comes from parsed source
+    assert assign_name.lineno is not None and assign_name.col_offset is not None
 
     class_def = nodes.ClassDef(
         name=assign_name.name,
@@ -358,7 +381,7 @@ def _looks_like_special_alias(node: nodes.Call) -> bool:
     """
     return (
         isinstance(node.func, nodes.Name)
-        and node.args
+        and bool(node.args)
         and (
             (
                 node.func.name == "_TupleType"
@@ -390,6 +413,8 @@ def infer_special_alias(
         raise InferenceError(node=node.args[0], context=ctx) from e
 
     assign_name = node.parent.targets[0]
+    # The alias comes from parsed source
+    assert assign_name.lineno is not None and assign_name.col_offset is not None
     class_def = nodes.ClassDef(
         name=assign_name.name,
         parent=node.parent,
@@ -414,7 +439,7 @@ def _looks_like_typing_cast(node: nodes.Call) -> bool:
 
 def infer_typing_cast(
     node: nodes.Call, ctx: context.InferenceContext | None = None
-) -> Iterator[nodes.NodeNG]:
+) -> Iterator[InferenceResult]:
     """Infer call to cast() returning same type as casted-from var."""
     if not isinstance(node.func, (nodes.Name, nodes.Attribute)):
         raise UseInferenceDefault
@@ -433,7 +458,7 @@ def infer_typing_cast(
     return node.args[1].infer(context=ctx)
 
 
-def _typing_transform():
+def _typing_transform() -> nodes.Module:
     code = textwrap.dedent("""
     class Generic:
         @classmethod
