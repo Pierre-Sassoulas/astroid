@@ -308,7 +308,9 @@ class AsStringVisitor:
         """return an nodes.ImportFrom node as string"""
         lazy = "lazy " if node.is_lazy else ""
         return "{}from {} import {}".format(
-            lazy, "." * (node.level or 0) + node.modname, _import_string(node.names)
+            lazy,
+            "." * (node.level or 0) + (node.modname or ""),
+            _import_string(node.names),
         )
 
     def visit_joinedstr(self, node: nodes.JoinedStr) -> str:
