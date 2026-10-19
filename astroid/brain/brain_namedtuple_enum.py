@@ -451,6 +451,7 @@ def infer_enum_class(node: nodes.ClassDef) -> nodes.ClassDef:
                 continue
 
             stmt = values[0].statement()
+            targets: Sequence[InferenceResult]
             if isinstance(stmt, nodes.Assign):
                 if isinstance(stmt.targets[0], nodes.Tuple):
                     targets = stmt.targets[0].itered()
