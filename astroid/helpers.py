@@ -45,7 +45,7 @@ def _function_type(
 
 def _object_type(
     node: InferenceResult, context: InferenceContext | None = None
-) -> Generator[InferenceResult | None]:
+) -> Generator[InferenceResult]:
     astroid_manager = manager.AstroidManager()
     builtins = astroid_manager.builtins_module
     context = context or InferenceContext()
@@ -80,7 +80,7 @@ def _object_type(
 
 def object_type(
     node: InferenceResult, context: InferenceContext | None = None
-) -> InferenceResult | None:
+) -> InferenceResult:
     """Obtain the type of the given node.
 
     This is used to implement the ``type`` builtin, which means that it's
