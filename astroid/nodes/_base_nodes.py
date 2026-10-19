@@ -12,7 +12,7 @@ from __future__ import annotations
 import itertools
 from collections.abc import Callable, Generator, Iterator
 from functools import cached_property, lru_cache, partial
-from typing import TYPE_CHECKING, ClassVar, TypeVar
+from typing import TYPE_CHECKING, ClassVar, Self, TypeVar
 
 from astroid import bases, nodes, util
 from astroid.context import (
@@ -108,14 +108,15 @@ class FilterStmtsBaseNode(NodeNG):
             return [node], True
         return _stmts, False
 
-    def assign_type(self):
+    def assign_type(self) -> Self:
         return self
 
 
 class AssignTypeNode(NodeNG):
     """Base node for nodes that can 'assign' such as AnnAssign."""
 
-    def assign_type(self):
+    # ParentAssignNode returns the assignment type of its parent instead.
+    def assign_type(self) -> NodeNG:
         return self
 
     def _get_filtered_stmts(

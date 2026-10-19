@@ -2011,7 +2011,7 @@ class Comprehension(NodeNG):
     See astroid/protocols.py for actual implementation.
     """
 
-    def assign_type(self):
+    def assign_type(self) -> Self:
         """The type of assignment that this node performs.
 
         :returns: The assignment type.
