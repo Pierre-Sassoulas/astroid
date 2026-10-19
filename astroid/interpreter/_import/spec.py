@@ -467,6 +467,7 @@ def _find_spec(
 
     search_paths = None
     processed: list[str] = []
+    spec: ModuleSpec | None = None
 
     while modpath:
         modname = modpath.pop(0)
@@ -491,4 +492,6 @@ def _find_spec(
         if spec.type == ModuleType.PKG_DIRECTORY:
             spec = spec._replace(submodule_search_locations=search_paths)
 
+    if spec is None:
+        raise ImportError("No module named ''")
     return spec

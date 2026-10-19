@@ -67,6 +67,12 @@ class ModuleFileTest(unittest.TestCase):
         )
 
 
+def test_find_spec_empty_modpath() -> None:
+    """An empty module path is an import error, not an unbound local."""
+    with pytest.raises(ImportError, match="No module named ''"):
+        spec.find_spec([])
+
+
 class LoadModuleFromNameTest(unittest.TestCase):
     """Load a python module from its name."""
 
