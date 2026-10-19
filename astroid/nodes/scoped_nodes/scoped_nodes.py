@@ -946,7 +946,7 @@ class Lambda(_base_nodes.FilterStmtsBaseNode, LocalsDictNodeNG):
         self.args = args
         self.body = body
 
-    def pytype(self) -> Literal["builtins.instancemethod", "builtins.function"]:
+    def pytype(self) -> str:
         """Get the name of the type that this node represents.
 
         :returns: The name of the type.
@@ -1262,7 +1262,7 @@ class FunctionDef(
                             decorators.append(assign.value)
         return decorators
 
-    def pytype(self) -> Literal["builtins.instancemethod", "builtins.function"]:
+    def pytype(self) -> str:
         """Get the name of the type that this node represents.
 
         :returns: The name of the type.
@@ -1527,7 +1527,7 @@ class FunctionDef(
 
     def _infer(
         self, context: InferenceContext | None = None
-    ) -> Generator[objects.Property | FunctionDef, None, InferenceErrorInfo]:
+    ) -> Generator[objects.Property | FunctionDef, None, InferenceErrorInfo | None]:
         from astroid import objects  # pylint: disable=import-outside-toplevel
 
         if not (self.decorators and bases._is_property(self)):
@@ -1904,6 +1904,12 @@ class ClassDef(
     _metaclass: NodeNG | None = None
     _metaclass_hack = False
     hide = False
+
+    _all_bases_known: bool
+    """Whether every base of this class is known, cached by helpers.has_known_bases.
+
+    It is only set once computed.
+    """
     type = property(
         _class_type,
         doc=(

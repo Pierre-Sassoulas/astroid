@@ -346,7 +346,9 @@ class BaseContainer(_base_nodes.ParentAssignNode, Instance, metaclass=abc.ABCMet
         yield from self.elts
 
     @decorators.raise_if_nothing_inferred
-    def _infer(self, context: InferenceContext | None = None) -> Generator[Self]:
+    def _infer(
+        self, context: InferenceContext | None = None
+    ) -> Generator[BaseContainer]:
         has_starred_named_expr = any(
             isinstance(e, (Starred, NamedExpr)) for e in self.elts
         )
