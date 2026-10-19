@@ -457,7 +457,9 @@ def infer_enum_class(node: nodes.ClassDef) -> nodes.ClassDef:
 
             new_targets = []
             for target in targets:
-                if isinstance(target, nodes.Starred):
+                # Skip starred, attribute and subscript targets: only names
+                # define members.
+                if not isinstance(target, nodes.AssignName):
                     continue
                 target_names.add(target.name)
                 # Replace all the assignments with our mocked class.
