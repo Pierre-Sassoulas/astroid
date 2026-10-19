@@ -168,6 +168,17 @@ class CallSite:
         except KeyError:
             pass
 
+        if funcnode.args.args is None:
+            # Built from a living object without a signature: the parameters
+            # the arguments map to are unknown.
+            raise InferenceError(
+                "Can not infer argument {arg} of {func!r}, its signature is unknown.",
+                call_site=self,
+                func=funcnode,
+                arg=name,
+                context=context,
+            )
+
         # Too many arguments given and no variable arguments.
         if len(self.positional_arguments) > len(funcnode.args.args):
             if not funcnode.args.vararg and not funcnode.args.posonlyargs:

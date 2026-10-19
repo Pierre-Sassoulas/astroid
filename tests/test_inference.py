@@ -24,6 +24,7 @@ from astroid import (
     manager,
     nodes,
     objects,
+    raw_building,
     test_utils,
     util,
 )
@@ -5386,6 +5387,15 @@ class CallSiteTest(unittest.TestCase):
         self.assertEqual(
             print_call_site._unpack_keywords(keywords), {None: Uninferable}
         )
+
+    def test_infer_argument_without_signature(self) -> None:
+        """A function built without a signature cannot map its arguments."""
+        module = nodes.Module("mod")
+        func = raw_building.build_function("func", module)
+        assert func.args.args is None
+        call_site = self._call_site_from_call(extract_node("func(1)"))
+        with pytest.raises(InferenceError, match="its signature is unknown"):
+            call_site.infer_argument(func, "arg", InferenceContext())
 
 
 class ObjectDunderNewTest(unittest.TestCase):
