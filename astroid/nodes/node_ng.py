@@ -37,7 +37,7 @@ from astroid.typing import (
 )
 
 if TYPE_CHECKING:
-    from astroid.bases import BaseInstance
+    from astroid.bases import BaseInstance, Proxy
     from astroid.nodes import _base_nodes
 
     FrameType = nodes.FunctionDef | nodes.Module | nodes.ClassDef | nodes.Lambda
@@ -85,7 +85,7 @@ class NodeNG:
         self,
         lineno: int | None,
         col_offset: int | None,
-        parent: NodeNG | None,
+        parent: NodeNG | Proxy | None,
         *,
         end_lineno: int | None,
         end_col_offset: int | None,
@@ -96,7 +96,9 @@ class NodeNG:
         self.col_offset = col_offset
         """The column that this node appears on in the source code."""
 
-        self.parent = parent
+        # The object model builds nodes whose parent is a proxy, such as an
+        # Instance, an UnboundMethod or a Generator.
+        self.parent: NodeNG | Proxy | None = parent
         """The parent node in the syntax tree."""
 
         self.end_lineno = end_lineno
