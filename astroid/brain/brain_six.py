@@ -4,6 +4,7 @@
 
 """Astroid hooks for six module."""
 
+from collections.abc import Callable, Iterator
 from textwrap import dedent
 
 from astroid import nodes
@@ -20,11 +21,13 @@ SIX_ADD_METACLASS = "six.add_metaclass"
 SIX_WITH_METACLASS = "six.with_metaclass"
 
 
-def default_predicate(line):
+def default_predicate(line: str) -> str:
     return line.strip()
 
 
-def _indent(text, prefix, predicate=default_predicate) -> str:
+def _indent(
+    text: str, prefix: str, predicate: Callable[[str], object] = default_predicate
+) -> str:
     """Adds 'prefix' to the beginning of selected lines in 'text'.
 
     If 'predicate' is provided, 'prefix' will only be added to the lines
@@ -33,7 +36,7 @@ def _indent(text, prefix, predicate=default_predicate) -> str:
     consist solely of whitespace characters.
     """
 
-    def prefixed_lines():
+    def prefixed_lines() -> Iterator[str]:
         for line in text.splitlines(True):
             yield prefix + line if predicate(line) else line
 
@@ -106,7 +109,7 @@ import urllib.error as urllib_error
 """
 
 
-def six_moves_transform():
+def six_moves_transform() -> nodes.Module:
     code = dedent("""
     class Moves(object):
     {}
@@ -117,7 +120,7 @@ def six_moves_transform():
     return module
 
 
-def _six_fail_hook(modname):
+def _six_fail_hook(modname: str) -> nodes.Module:
     """Fix six.moves imports due to the dynamic nature of this
     class.
 
@@ -152,7 +155,7 @@ def _six_fail_hook(modname):
     return module
 
 
-def _looks_like_decorated_with_six_add_metaclass(node) -> bool:
+def _looks_like_decorated_with_six_add_metaclass(node: nodes.ClassDef) -> bool:
     if not node.decorators:
         return False
 
@@ -164,13 +167,13 @@ def _looks_like_decorated_with_six_add_metaclass(node) -> bool:
     return False
 
 
-def transform_six_add_metaclass(node):  # pylint: disable=inconsistent-return-statements
+def transform_six_add_metaclass(node: nodes.ClassDef) -> nodes.ClassDef | None:
     """Check if the given class node is decorated with *six.add_metaclass*.
 
     If so, inject its argument as the metaclass of the underlying class.
     """
     if not node.decorators:
-        return
+        return None
 
     for decorator in node.decorators.nodes:
         if not isinstance(decorator, nodes.Call):
@@ -188,38 +191,42 @@ def transform_six_add_metaclass(node):  # pylint: disable=inconsistent-return-st
             metaclass = decorator.args[0]
             node._metaclass = metaclass
             return node
-    return
+    return None
 
 
-def _looks_like_nested_from_six_with_metaclass(node) -> bool:
+def _looks_like_nested_from_six_with_metaclass(node: nodes.ClassDef) -> bool:
     if len(node.bases) != 1:
         return False
     base = node.bases[0]
     if not isinstance(base, nodes.Call):
         return False
-    try:
-        if hasattr(base.func, "expr"):
+    match base.func:
+        case nodes.Attribute(expr=nodes.Name(name=mod), attrname=attrname):
             # format when explicit 'six.with_metaclass' is used
-            mod = base.func.expr.name
-            func = base.func.attrname
-            func = f"{mod}.{func}"
-        else:
+            func = f"{mod}.{attrname}"
+        case nodes.Name(name=name) if isinstance(node.parent, nodes.LocalsDictNodeNG):
             # format when 'with_metaclass' is used directly (local import from six)
             # check reference module to avoid 'with_metaclass' name clashes
-            mod = base.parent.parent
-            import_from = mod.locals["with_metaclass"][0]
-            func = f"{import_from.modname}.{base.func.name}"
-    except (AttributeError, KeyError, IndexError):
-        return False
+            try:
+                import_from = node.parent.locals["with_metaclass"][0]
+            except KeyError:
+                return False
+            if not isinstance(import_from, nodes.ImportFrom):
+                return False
+            func = f"{import_from.modname}.{name}"
+        case _:
+            return False
     return func == SIX_WITH_METACLASS
 
 
-def transform_six_with_metaclass(node):
+def transform_six_with_metaclass(node: nodes.ClassDef) -> nodes.ClassDef:
     """Check if the given class node is defined with *six.with_metaclass*.
 
     If so, inject its argument as the metaclass of the underlying class.
     """
     call = node.bases[0]
+    # Checked by _looks_like_nested_from_six_with_metaclass()
+    assert isinstance(call, nodes.Call)
     if not call.args:
         # ``six.with_metaclass()`` written with no positional metaclass
         # argument is invalid, but the predicate still matches it.
