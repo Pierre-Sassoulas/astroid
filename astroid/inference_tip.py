@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from collections import OrderedDict
 from collections.abc import Generator
-from typing import Any, TypeVar
+from typing import Never, TypeVar
 
 from astroid.context import InferenceContext
 from astroid.exceptions import InferenceOverwriteError, UseInferenceDefault
@@ -19,11 +19,15 @@ from astroid.typing import (
     TransformFn,
 )
 
+# Inference tips for any node type share these caches. InferFn is
+# contravariant in its node type: InferFn[Never] accepts a tip for any node.
+_AnyInferFn = InferFn[Never]
+
 _cache: OrderedDict[
-    tuple[InferFn[Any], NodeNG, InferenceContext | None], list[InferenceResult]
+    tuple[_AnyInferFn, NodeNG, InferenceContext | None], list[InferenceResult]
 ] = OrderedDict()
 
-_CURRENTLY_INFERRING: set[tuple[InferFn[Any], NodeNG]] = set()
+_CURRENTLY_INFERRING: set[tuple[_AnyInferFn, NodeNG]] = set()
 
 _NodesT = TypeVar("_NodesT", bound=NodeNG)
 
