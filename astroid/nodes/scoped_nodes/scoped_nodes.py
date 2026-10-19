@@ -265,7 +265,7 @@ class Module(LocalsDictNodeNG):
         self.locals = self.globals = {}
         """A map of the name of a local variable to the node defining the local."""
 
-        self.body: list[node_classes.NodeNG] = []
+        self.body: list[NodeNG] = []
         """The contents of the module."""
 
         self.future_imports: set[str] = set()
@@ -1947,7 +1947,7 @@ class ClassDef(
         self.bases: list[SuccessfulInferenceResult] = []
         """What the class inherits from."""
 
-        self.body: list[node_classes.NodeNG] = []
+        self.body: list[NodeNG] = []
         """The contents of the class body."""
 
         self.name = name
