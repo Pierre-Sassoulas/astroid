@@ -8,15 +8,12 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from collections.abc import Iterator
-from typing import TYPE_CHECKING, Self
+from typing import Self
 
 from astroid import helpers, nodes, util
 from astroid.context import InferenceContext
 from astroid.exceptions import AstroidTypeError, InferenceError, MroError
 from astroid.typing import InferenceResult
-
-if TYPE_CHECKING:
-    from astroid import bases
 
 _NameNodes = nodes.AssignAttr | nodes.Attribute | nodes.AssignName | nodes.Name
 
@@ -109,7 +106,7 @@ class BooleanConstraint(Constraint):
         - negate=False: satisfied if boolean value is True
         - negate=True: satisfied if boolean value is False
         """
-        inferred_booleaness = inferred.bool_value()
+        inferred_booleaness: bool | util.UninferableBase = inferred.bool_value()
         if inferred is util.Uninferable or isinstance(
             inferred_booleaness, util.UninferableBase
         ):
@@ -134,15 +131,15 @@ class TypeConstraint(Constraint):
         """Return a new constraint for node if expr matches the
         "isinstance(x, y)" pattern. Else, return None.
         """
-        is_instance_call = (
+        if (
             isinstance(expr, nodes.Call)
             and isinstance(expr.func, nodes.Name)
             and expr.func.name == "isinstance"
             and not expr.keywords
             and len(expr.args) == 2
-        )
-        if is_instance_call and _matches(expr.args[0], node):
-            return cls(node=node, classinfo=expr.args[1], negate=negate)
+        ):
+            if _matches(expr.args[0], node):
+                return cls(node=node, classinfo=expr.args[1], negate=negate)
 
         return None
 
@@ -225,7 +222,9 @@ class EqualityConstraint(Constraint):
         if isinstance(inferred, nodes.Const) and isinstance(
             operand_inferred, nodes.Const
         ):
-            return self.negate ^ (inferred.value == operand_inferred.value)
+            # Constant values are literals, which compare to a bool
+            same_value: bool = inferred.value == operand_inferred.value
+            return self.negate ^ same_value
 
         if inferred.callable() and operand_inferred.callable():
             return self.negate ^ (inferred is operand_inferred)
@@ -339,6 +338,7 @@ def get_constraints(
         ):
             branch, _ = parent.locate_child(current_node)
             if branch == "generators":
+                assert isinstance(current_node, nodes.Comprehension)
                 # Conditions guard the iterables of all later generators.
                 index = parent.generators.index(current_node)
                 generators = parent.generators[:index]
@@ -375,14 +375,16 @@ _CONSTRAINTS_BY_NODE_TYPE: dict[type[nodes.NodeNG], tuple[type[Constraint], ...]
 """Constraint types that can match each expression node type."""
 
 
-def _matches(node1: nodes.NodeNG | bases.Proxy, node2: nodes.NodeNG) -> bool:
+def _matches(node1: InferenceResult, node2: nodes.NodeNG) -> bool:
     """Returns True if the two nodes match."""
     if isinstance(node1, nodes.Name) and isinstance(node2, nodes.Name):
         return node1.name == node2.name
     if isinstance(node1, nodes.Attribute) and isinstance(node2, nodes.Attribute):
         return node1.attrname == node2.attrname and _matches(node1.expr, node2.expr)
     if isinstance(node1, nodes.Const) and isinstance(node2, nodes.Const):
-        return node1.value == node2.value
+        # Constant values are literals, which compare to a bool
+        same_value: bool = node1.value == node2.value
+        return same_value
 
     return False
 
