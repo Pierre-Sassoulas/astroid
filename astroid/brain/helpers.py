@@ -5,14 +5,11 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import TYPE_CHECKING
 
 from astroid.exceptions import InferenceError
 from astroid.manager import AstroidManager
+from astroid.nodes.node_ng import NodeNG
 from astroid.nodes.scoped_nodes import Module
-
-if TYPE_CHECKING:
-    from astroid.nodes.node_ng import NodeNG
 
 
 def register_module_extender(
@@ -23,7 +20,7 @@ def register_module_extender(
         for name, objs in extension_module.locals.items():
             node.locals[name] = objs
             for obj in objs:
-                if obj.parent is extension_module:
+                if isinstance(obj, NodeNG) and obj.parent is extension_module:
                     obj.parent = node
 
     manager.register_transform(Module, transform, lambda n: n.name == module_name)

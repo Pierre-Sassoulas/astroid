@@ -6,18 +6,22 @@ from __future__ import annotations
 
 import inspect
 import random
+from collections.abc import Iterator
 
 from astroid import nodes
 from astroid.context import InferenceContext
 from astroid.exceptions import UseInferenceDefault
 from astroid.inference_tip import inference_tip
 from astroid.manager import AstroidManager
+from astroid.typing import SuccessfulInferenceResult
 from astroid.util import UninferableBase, safe_infer
 
 ACCEPTED_ITERABLES_FOR_SAMPLE = (nodes.List, nodes.Set, nodes.Tuple)
 
 
-def _clone_node_with_lineno(node, parent, lineno):
+def _clone_node_with_lineno(
+    node: SuccessfulInferenceResult, parent: nodes.List, lineno: int | None
+) -> SuccessfulInferenceResult:
     if isinstance(node, nodes.EvaluatedObject):
         node = node.original
     if not isinstance(node, nodes.NodeNG):
@@ -47,9 +51,12 @@ def _clone_node_with_lineno(node, parent, lineno):
         if param in valid_init_params:
             init_params[param] = getattr(node, param)
 
-    new_node = cls(**init_params)
-    if hasattr(node, "postinit") and _astroid_fields:
-        new_node.postinit(**postinit_params)
+    # init_params only holds the arguments that this node class accepts,
+    # which the checkers cannot know from the NodeNG signature.
+    new_node = cls(**init_params)  # type: ignore[arg-type]
+    postinit = getattr(new_node, "postinit", None)
+    if postinit is not None and _astroid_fields:
+        postinit(**postinit_params)
 
     for param in other_fields:
         if param not in valid_init_params:
@@ -57,7 +64,9 @@ def _clone_node_with_lineno(node, parent, lineno):
     return new_node
 
 
-def infer_random_sample(node, context: InferenceContext | None = None):
+def infer_random_sample(
+    node: nodes.Call, context: InferenceContext | None = None
+) -> Iterator[nodes.List]:
     if len(node.args) != 2:
         raise UseInferenceDefault
 
@@ -101,7 +110,7 @@ def infer_random_sample(node, context: InferenceContext | None = None):
     return iter((new_node,))
 
 
-def _looks_like_random_sample(node) -> bool:
+def _looks_like_random_sample(node: nodes.Call) -> bool:
     func = node.func
     if isinstance(func, nodes.Attribute):
         return func.attrname == "sample"

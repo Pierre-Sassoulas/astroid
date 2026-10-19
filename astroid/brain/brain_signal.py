@@ -26,12 +26,13 @@ actual standard signal numbers - which may vary depending on the system.
 
 import sys
 
+from astroid import nodes
 from astroid.brain.helpers import register_module_extender
 from astroid.builder import parse
 from astroid.manager import AstroidManager
 
 
-def _signals_enums_transform():
+def _signals_enums_transform() -> nodes.Module:
     """Generates the AST for 'Signals', 'Handlers' and 'Sigmasks' IntEnums."""
     return parse(_signals_enum() + _handlers_enum() + _sigmasks_enum())
 
@@ -104,15 +105,15 @@ def _handlers_enum() -> str:
 
 def _sigmasks_enum() -> str:
     """Generates the source code for the Sigmasks int enum."""
-    if sys.platform != "win32":
-        return """
+    if sys.platform == "win32":
+        return ""
+    return """
     import enum
     class Sigmasks(enum.IntEnum):
         SIG_BLOCK   = enum.auto()
         SIG_UNBLOCK = enum.auto()
         SIG_SETMASK = enum.auto()
         """
-    return ""
 
 
 def register(manager: AstroidManager) -> None:

@@ -6,12 +6,12 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator
 from functools import partial
 from itertools import chain
 
 from astroid import BoundMethod, arguments, nodes, objects
-from astroid.builder import extract_node
+from astroid.builder import _extract_single_node
 from astroid.context import InferenceContext
 from astroid.exceptions import InferenceError, UseInferenceDefault
 from astroid.inference_tip import inference_tip
@@ -30,13 +30,15 @@ class LruWrappedModel(objectmodel.FunctionModel):
     the decorated function.
     """
 
+    _instance: nodes.FunctionDef
+
     @property
-    def attr___wrapped__(self):
+    def attr___wrapped__(self) -> nodes.FunctionDef:
         return self._instance
 
     @property
-    def attr_cache_info(self):
-        cache_info = extract_node("""
+    def attr_cache_info(self) -> BoundMethod:
+        cache_info = _extract_single_node("""
         from functools import _CacheInfo
         _CacheInfo(0, 0, 0, 0)
         """)
@@ -54,12 +56,17 @@ class LruWrappedModel(objectmodel.FunctionModel):
         return CacheInfoBoundMethod(proxy=self._instance, bound=self._instance)
 
     @property
-    def attr_cache_clear(self):
-        node = extract_node("""def cache_clear(self): pass""")
-        return BoundMethod(proxy=node, bound=self._instance.parent.scope())
+    def attr_cache_clear(self) -> BoundMethod:
+        node = _extract_single_node("""def cache_clear(self): pass""")
+        assert isinstance(node, nodes.FunctionDef)
+        parent = self._instance.parent
+        assert parent is not None
+        return BoundMethod(proxy=node, bound=parent.scope())
 
 
-def _transform_lru_cache(node, context: InferenceContext | None = None) -> None:
+def _transform_lru_cache(
+    node: nodes.FunctionDef, context: InferenceContext | None = None
+) -> None:
     # TODO: this is not ideal, since the node should be immutable,
     # but due to https://github.com/pylint-dev/astroid/issues/354,
     # there's not much we can do now.
@@ -94,7 +101,7 @@ def _functools_partial_inference(
     # Determine if the passed keywords into the callsite are supported
     # by the wrapped function.
     if not inferred_wrapped_function.args:
-        function_parameters = []
+        function_parameters: Iterable[nodes.AssignName] = []
     else:
         function_parameters = chain(
             inferred_wrapped_function.args.args or (),
@@ -130,7 +137,7 @@ def _functools_partial_inference(
     return iter((partial_function,))
 
 
-def _looks_like_lru_cache(node) -> bool:
+def _looks_like_lru_cache(node: nodes.FunctionDef) -> bool:
     """Check if the given function node is decorated with lru_cache."""
     if not node.decorators:
         return False

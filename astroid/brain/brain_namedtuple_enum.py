@@ -9,12 +9,12 @@ from __future__ import annotations
 import functools
 import keyword
 import unicodedata
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 from textwrap import dedent
 from typing import Final
 
 from astroid import arguments, bases, nodes, util
-from astroid.builder import AstroidBuilder, _extract_single_node, extract_node
+from astroid.builder import AstroidBuilder, _extract_single_node
 from astroid.context import InferenceContext
 from astroid.exceptions import (
     AstroidError,
@@ -27,6 +27,7 @@ from astroid.exceptions import (
 from astroid.inference_tip import inference_tip
 from astroid.manager import AstroidManager
 from astroid.nodes.scoped_nodes.scoped_nodes import SYNTHETIC_ROOT
+from astroid.typing import InferenceResult, SuccessfulInferenceResult
 
 ENUM_QNAME: Final[str] = "enum.Enum"
 TYPING_NAMEDTUPLE_QUALIFIED: Final = {
@@ -40,7 +41,9 @@ TYPING_NAMEDTUPLE_BASENAMES: Final = {
 }
 
 
-def _infer_first(node, context):
+def _infer_first(
+    node: InferenceResult, context: InferenceContext | None
+) -> SuccessfulInferenceResult:
     if isinstance(node, util.UninferableBase):
         raise UseInferenceDefault
     try:
@@ -52,14 +55,17 @@ def _infer_first(node, context):
     return value
 
 
-def _find_func_form_arguments(node, context):
-    def _extract_namedtuple_arg_or_keyword(  # pylint: disable=inconsistent-return-statements
-        position, key_name=None
-    ):
+def _find_func_form_arguments(
+    node: nodes.Call, context: InferenceContext | None
+) -> tuple[object, SuccessfulInferenceResult]:
+    def _extract_namedtuple_arg_or_keyword(
+        position: int, key_name: str | None = None
+    ) -> SuccessfulInferenceResult | None:
         if len(args) > position:
             return _infer_first(args[position], context)
         if key_name and key_name in found_keywords:
             return _infer_first(found_keywords[key_name], context)
+        return None
 
     args = node.args
     keywords = node.keywords
@@ -82,7 +88,7 @@ def infer_func_form(
     parent: nodes.NodeNG,
     context: InferenceContext | None = None,
     enum: bool = False,
-) -> tuple[nodes.ClassDef, str, list[str]]:
+) -> tuple[nodes.ClassDef, str, Sequence[str]]:
     """Specific inference function for namedtuple or Python 3 enum."""
     # node is a Call node, class name as first argument and generated class
     # attributes as second argument
@@ -103,7 +109,8 @@ def infer_func_form(
                 attributes = []
                 fields = _get_namedtuple_fields(node)
                 if fields:
-                    fields_node = extract_node(fields)
+                    fields_node = _extract_single_node(fields)
+                    assert isinstance(fields_node, nodes.Tuple)
                     attributes = [
                         _infer_first(const, context).value for const in fields_node.elts
                     ]
@@ -158,7 +165,13 @@ def infer_func_form(
     # If we can't infer the name of the class, don't crash, up to this point
     # we know it is a namedtuple anyway.
     name = name or "Uninferable"
+    if not isinstance(name, str):
+        # A class name must be a string, which _check_namedtuple_attributes()
+        # also requires from a namedtuple typename.
+        raise UseInferenceDefault
     # we want to return a Class node instance with proper attributes set
+    # The call comes from parsed source, so it has a position.
+    assert node.lineno is not None and node.col_offset is not None
     class_node = nodes.ClassDef(
         name,
         lineno=node.lineno,
@@ -186,7 +199,7 @@ def _has_namedtuple_base(node: nodes.ClassDef) -> bool:
     return bool(set(node.basenames) & TYPING_NAMEDTUPLE_BASENAMES)
 
 
-def _looks_like(node, name) -> bool:
+def _looks_like(node: nodes.Call, name: str) -> bool:
     func = node.func
     if isinstance(func, nodes.Attribute):
         return func.attrname == name
@@ -204,7 +217,8 @@ def infer_named_tuple(
     node: nodes.Call, context: InferenceContext | None = None
 ) -> Iterator[nodes.ClassDef]:
     """Specific inference function for namedtuple Call node."""
-    tuple_base: nodes.Name = _extract_single_node("tuple")
+    tuple_base = _extract_single_node("tuple")
+    assert isinstance(tuple_base, nodes.Name)
     class_node, name, attributes = infer_func_form(
         node, tuple_base, parent=SYNTHETIC_ROOT, context=context
     )
@@ -265,22 +279,24 @@ class {name}(tuple):
         return tuple(self)
 {field_defs}
     """)
-    class_node.locals["_asdict"] = fake.body[0].locals["_asdict"]
-    class_node.locals["_make"] = fake.body[0].locals["_make"]
-    class_node.locals["_replace"] = fake.body[0].locals["_replace"]
-    class_node.locals["_fields"] = fake.body[0].locals["_fields"]
+    fake_class = fake.body[0]
+    assert isinstance(fake_class, nodes.ClassDef)
+    class_node.locals["_asdict"] = fake_class.locals["_asdict"]
+    class_node.locals["_make"] = fake_class.locals["_make"]
+    class_node.locals["_replace"] = fake_class.locals["_replace"]
+    class_node.locals["_fields"] = fake_class.locals["_fields"]
     for attr in attributes:
         # Python normalises identifiers to NFKC, so a field named "\u00b5" (MICRO SIGN)
         # is stored by the parser as "\u03bc" (GREEK SMALL LETTER MU). Looking the
         # attribute up under the name as written raises KeyError on a definition
         # namedtuple itself accepts, so use the name the parser actually used.
         normalized = unicodedata.normalize("NFKC", attr)
-        class_node.locals[normalized] = fake.body[0].locals[normalized]
+        class_node.locals[normalized] = fake_class.locals[normalized]
     # we use UseInferenceDefault, we can't be a generator so return an iterator
     return iter([class_node])
 
 
-def _get_renamed_namedtuple_attributes(field_names):
+def _get_renamed_namedtuple_attributes(field_names: tuple[str, ...]) -> tuple[str, ...]:
     names = list(field_names)
     seen = set()
     for i, name in enumerate(field_names):
@@ -298,7 +314,9 @@ def _get_renamed_namedtuple_attributes(field_names):
     return tuple(names)
 
 
-def _check_namedtuple_attributes(typename, attributes, rename=False):
+def _check_namedtuple_attributes(
+    typename: str, attributes: Sequence[str], rename: bool = False
+) -> Sequence[str]:
     attributes = tuple(attributes)
     if rename:
         attributes = _get_renamed_namedtuple_attributes(attributes)
@@ -455,9 +473,11 @@ def infer_enum_class(node: nodes.ClassDef) -> nodes.ClassDef:
                 else:
                     inferred_return_value = stmt.value.as_string()
 
-            new_targets = []
+            new_targets: list[InferenceResult] = []
             for target in targets:
-                if isinstance(target, nodes.Starred):
+                # Skip starred, attribute and subscript targets: only names
+                # define members.
+                if not isinstance(target, nodes.AssignName):
                     continue
                 target_names.add(target.name)
                 # Replace all the assignments with our mocked class.
@@ -492,6 +512,7 @@ def infer_enum_class(node: nodes.ClassDef) -> nodes.ClassDef:
                 fake = AstroidBuilder(
                     AstroidManager(), apply_transforms=False
                 ).string_build(classdef)[target.name]
+                assert isinstance(fake, nodes.ClassDef)
                 fake.parent = target.parent
                 for method in node.mymethods():
                     fake.locals[method.name] = [method]
@@ -566,19 +587,24 @@ def infer_enum_class(node: nodes.ClassDef) -> nodes.ClassDef:
     return node
 
 
-def infer_typing_namedtuple_class(class_node, context: InferenceContext | None = None):
+def infer_typing_namedtuple_class(
+    class_node: nodes.ClassDef, context: InferenceContext | None = None
+) -> Iterator[nodes.ClassDef]:
     """Infer a subclass of typing.NamedTuple."""
     # Check if it has the corresponding bases
+    # Only annotated names are fields, not annotated attributes or subscripts
     annassigns_fields = [
         annassign.target.name
         for annassign in class_node.body
         if isinstance(annassign, nodes.AnnAssign)
+        and isinstance(annassign.target, nodes.AssignName)
     ]
     code = dedent("""
     from collections import namedtuple
     namedtuple({typename!r}, {fields!r})
     """).format(typename=class_node.name, fields=",".join(annassigns_fields))
-    node = extract_node(code)
+    node = _extract_single_node(code)
+    assert isinstance(node, nodes.Call)
     try:
         generated_class_node = next(infer_named_tuple(node, context))
     except StopIteration as e:
@@ -601,13 +627,15 @@ def infer_typing_namedtuple_class(class_node, context: InferenceContext | None =
     return iter((generated_class_node,))
 
 
-def infer_typing_namedtuple_function(node, context: InferenceContext | None = None):
+def infer_typing_namedtuple_function(
+    node: nodes.FunctionDef, context: InferenceContext | None = None
+) -> Iterator[InferenceResult]:
     """
     Starting with python3.9, NamedTuple is a function of the typing module.
     The class NamedTuple is build dynamically through a call to `type` during
     initialization of the `_NamedTuple` variable.
     """
-    klass = extract_node("""
+    klass = _extract_single_node("""
         from typing import _NamedTuple
         _NamedTuple
         """)
@@ -625,7 +653,10 @@ def infer_typing_namedtuple(
     except (InferenceError, StopIteration) as exc:
         raise UseInferenceDefault from exc
 
-    if func.qname() not in TYPING_NAMEDTUPLE_QUALIFIED:
+    if (
+        not isinstance(func, (nodes.LocalsDictNodeNG, bases.Proxy))
+        or func.qname() not in TYPING_NAMEDTUPLE_QUALIFIED
+    ):
         raise UseInferenceDefault
 
     if len(node.args) != 2:

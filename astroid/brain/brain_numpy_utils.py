@@ -6,12 +6,14 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from functools import lru_cache
 from importlib import metadata
 
 from astroid import nodes
-from astroid.builder import extract_node
+from astroid.builder import _extract_single_node
 from astroid.context import InferenceContext
+from astroid.typing import InferenceResult
 
 # Class subscript is available in numpy starting with version 1.20.0
 NUMPY_VERSION_TYPE_HINTS_SUPPORT = ("1", "20", "0")
@@ -20,7 +22,7 @@ NUMPY_VERSION_TYPE_HINTS_SUPPORT = ("1", "20", "0")
 def numpy_supports_type_hints() -> bool:
     """Returns True if numpy supports type hints."""
     np_ver = _get_numpy_version()
-    return np_ver and np_ver > NUMPY_VERSION_TYPE_HINTS_SUPPORT
+    return np_ver > NUMPY_VERSION_TYPE_HINTS_SUPPORT
 
 
 def numpy_version_2_or_later() -> bool:
@@ -32,7 +34,7 @@ def numpy_version_2_or_later() -> bool:
 
 
 @lru_cache
-def _get_numpy_version() -> tuple[str, str, str]:
+def _get_numpy_version() -> tuple[str, ...]:
     """
     Return the numpy version number if numpy is installed.
 
@@ -47,8 +49,8 @@ def _get_numpy_version() -> tuple[str, str, str]:
 
 def infer_numpy_name(
     sources: dict[str, str], node: nodes.Name, context: InferenceContext | None = None
-):
-    extracted_node = extract_node(sources[node.name])
+) -> Iterator[InferenceResult]:
+    extracted_node = _extract_single_node(sources[node.name])
     return extracted_node.infer(context=context)
 
 
@@ -56,8 +58,8 @@ def infer_numpy_attribute(
     sources: dict[str, str],
     node: nodes.Attribute,
     context: InferenceContext | None = None,
-):
-    extracted_node = extract_node(sources[node.attrname])
+) -> Iterator[InferenceResult]:
+    extracted_node = _extract_single_node(sources[node.attrname])
     return extracted_node.infer(context=context)
 
 

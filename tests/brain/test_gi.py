@@ -2,7 +2,12 @@
 # For details: https://github.com/pylint-dev/astroid/blob/main/LICENSE
 # Copyright (c) https://github.com/pylint-dev/astroid/blob/main/CONTRIBUTORS.txt
 
+import sys
+import types
 import unittest
+from collections.abc import Iterator
+
+import pytest
 
 try:
     import gi  # pylint: disable=unused-import
@@ -12,7 +17,9 @@ except ImportError:
     HAS_GI = False
 
 from astroid import builder, nodes
+from astroid.brain import brain_gi
 from astroid.brain.brain_gi import _looks_like_require_version
+from astroid.manager import AstroidManager
 
 
 @unittest.skipUnless(HAS_GI, "This test requires the gobject introspection library.")
@@ -126,3 +133,78 @@ class RequireVersionMatchTest(unittest.TestCase):
                 self._call('import other\nother.require_version("Gtk", "3.0")')
             )
         )
+
+
+class _FakeGi(types.ModuleType):
+    """A stand-in for the gi package, which the CI does not install."""
+
+    class PyGIDeprecationWarning(Warning):
+        pass
+
+    class PyGIWarning(Warning):
+        pass
+
+    def __init__(self) -> None:
+        super().__init__("gi")
+        self.required_versions: list[tuple[str, str]] = []
+
+    @staticmethod
+    def check_version(version: tuple[int, int, int]) -> None:
+        """Pretend to be a pygobject that supports inspect.signature()."""
+
+    def require_version(self, namespace: str, version: str) -> None:
+        self.required_versions.append((namespace, version))
+
+
+@pytest.fixture(name="fake_gi")
+def fixture_fake_gi(monkeypatch: pytest.MonkeyPatch) -> Iterator[_FakeGi]:
+    gi_module = _FakeGi()
+    monkeypatch.setitem(sys.modules, "gi", gi_module)
+    monkeypatch.setattr(brain_gi, "_inspected_modules", {})
+    yield gi_module
+    AstroidManager().astroid_cache.pop("gi.repository.Fake", None)
+
+
+def test_stub_built_from_gi_module(
+    fake_gi: _FakeGi, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    class Widget:
+        upper = str.upper
+
+    class WidgetError(Exception):
+        pass
+
+    def make_widget() -> Widget:
+        return Widget()
+
+    repository = types.ModuleType("gi.repository")
+    module = types.ModuleType("gi.repository.Fake")
+    module.SIZE = 3  # type: ignore[attr-defined]
+    module.TITLE = "fake"  # type: ignore[attr-defined]
+    module.make_widget = make_widget  # type: ignore[attr-defined]
+    module.Widget = Widget  # type: ignore[attr-defined]
+    module.WidgetError = WidgetError  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "gi.repository", repository)
+    monkeypatch.setitem(sys.modules, "gi.repository.Fake", module)
+
+    stub = brain_gi._import_gi_module("gi.repository.Fake")
+
+    assert stub.name == "gi.repository.Fake"
+    size = stub["SIZE"]
+    assert isinstance(size, nodes.AssignName)
+    assert size.statement().value.value == 3
+    title = stub["TITLE"]
+    assert isinstance(title, nodes.AssignName)
+    assert title.statement().value.value == "fake"
+    assert isinstance(stub["make_widget"], nodes.FunctionDef)
+    widget = stub["Widget"]
+    assert isinstance(widget, nodes.ClassDef)
+    assert [arg.name for arg in widget["upper"].args.args] == ["self"]
+    assert [base.as_string() for base in stub["WidgetError"].bases] == ["Exception"]
+    # The stub is built once
+    assert brain_gi._import_gi_module("gi.repository.Fake") is stub
+
+
+def test_building_require_version_calls_gi(fake_gi: _FakeGi) -> None:
+    builder.parse('import gi\ngi.require_version("Gtk", "3.0")')
+    assert fake_gi.required_versions == [("Gtk", "3.0")]

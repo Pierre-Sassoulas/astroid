@@ -2,16 +2,16 @@
 # For details: https://github.com/pylint-dev/astroid/blob/main/LICENSE
 # Copyright (c) https://github.com/pylint-dev/astroid/blob/main/CONTRIBUTORS.txt
 
-from astroid.bases import BoundMethod
+from astroid import nodes
+from astroid.bases import BoundMethod, Instance
 from astroid.brain.helpers import register_module_extender
 from astroid.builder import parse
 from astroid.exceptions import InferenceError
 from astroid.manager import AstroidManager
 from astroid.nodes.scoped_nodes import FunctionDef
-from astroid.util import UninferableBase
 
 
-def _multiprocessing_transform():
+def _multiprocessing_transform() -> nodes.Module:
     module = parse("""
     from multiprocessing.managers import SyncManager
     def Manager():
@@ -31,24 +31,24 @@ def _multiprocessing_transform():
     except (InferenceError, StopIteration):
         return module
 
-    if isinstance(context, UninferableBase) or isinstance(base, UninferableBase):
+    if not isinstance(context, Instance) or not isinstance(base, Instance):
         return module
 
-    for node in (context, base):
-        for key, value in node.locals.items():
+    for instance in (context, base):
+        for key, values in instance.locals.items():
             if key.startswith("_"):
                 continue
 
-            value = value[0]
+            value = values[0]
             if isinstance(value, FunctionDef):
                 # We need to rebound this, since otherwise
                 # it will have an extra argument (self).
-                value = BoundMethod(value, node)
+                value = BoundMethod(value, instance)
             module[key] = value
     return module
 
 
-def _multiprocessing_managers_transform():
+def _multiprocessing_managers_transform() -> nodes.Module:
     return parse("""
     import array
     import threading

@@ -65,6 +65,8 @@ def dataclass_transform(node: nodes.ClassDef) -> nodes.ClassDef | None:
     node.is_dataclass = True
 
     for assign_node in _get_dataclass_attributes(node):
+        # _get_dataclass_attributes() only yields assignments to a name
+        assert isinstance(assign_node.target, nodes.AssignName)
         name = assign_node.target.name
 
         rhs_node = nodes.Unknown(
@@ -72,12 +74,13 @@ def dataclass_transform(node: nodes.ClassDef) -> nodes.ClassDef | None:
             col_offset=assign_node.col_offset,
             parent=assign_node,
         )
-        rhs_node = AstroidManager().visit_transforms(rhs_node)
-        node.instance_attrs[name] = [rhs_node]
+        node.instance_attrs[name] = [AstroidManager().visit_transforms(rhs_node)]
 
     if not _check_generate_dataclass_init(node):
         return None
 
+    # is_decorated_with_dataclass() checked that the class has decorators
+    assert node.decorators is not None
     kw_only_decorated = False
     if node.decorators.nodes:
         for decorator in node.decorators.nodes:
@@ -99,6 +102,7 @@ def dataclass_transform(node: nodes.ClassDef) -> nodes.ClassDef | None:
     except AstroidSyntaxError:
         pass
     else:
+        assert isinstance(init_node, nodes.FunctionDef)
         init_node.parent = node
         init_node.lineno, init_node.col_offset = None, None
         node.locals["__init__"] = [init_node]
@@ -106,6 +110,7 @@ def dataclass_transform(node: nodes.ClassDef) -> nodes.ClassDef | None:
         root = node.root()
         if DEFAULT_FACTORY in init_str and DEFAULT_FACTORY not in root.locals:
             new_assign = parse(f"{DEFAULT_FACTORY} = object()").body[0]
+            assert isinstance(new_assign, nodes.Assign)
             new_assign.parent = root
             root.locals[DEFAULT_FACTORY] = [new_assign.targets[0]]
     return node
@@ -125,15 +130,13 @@ def _get_dataclass_attributes(
         ):
             continue
 
-        # Annotation is never None
-        if is_class_var(assign_node.annotation):  # type: ignore[arg-type]
+        if is_class_var(assign_node.annotation):
             continue
 
         if _is_keyword_only_sentinel(assign_node.annotation):
             continue
 
-        # Annotation is never None
-        if not init and _is_init_var(assign_node.annotation):  # type: ignore[arg-type]
+        if not init and _is_init_var(assign_node.annotation):
             continue
 
         yield assign_node
@@ -151,6 +154,8 @@ def _check_generate_dataclass_init(node: nodes.ClassDef) -> bool:
 
     found = None
 
+    # dataclass_transform() checked that the class has decorators
+    assert node.decorators is not None
     for decorator_attribute in node.decorators.nodes:
         if not isinstance(decorator_attribute, nodes.Call):
             continue
@@ -163,8 +168,7 @@ def _check_generate_dataclass_init(node: nodes.ClassDef) -> bool:
 
     # Check for keyword arguments of the form init=False
     return not any(
-        keyword.arg == "init"
-        and keyword.value.bool_value() is False  # type: ignore[union-attr] # value is never None
+        keyword.arg == "init" and keyword.value.bool_value() is False
         for keyword in found.keywords
     )
 
@@ -275,7 +279,10 @@ def _generate_dataclass_init(
 
     prev_pos_only_store, prev_kw_only_store = _find_arguments_from_base_classes(node)
 
+    annotation: nodes.NodeNG | None
     for assign in assigns:
+        # _get_dataclass_attributes() only yields assignments to a name
+        assert isinstance(assign.target, nodes.AssignName)
         name, annotation, value = assign.target.name, assign.annotation, assign.value
 
         # Check whether this assign is overriden by a property assignment
@@ -304,7 +311,7 @@ def _generate_dataclass_init(
                 prev_kw_only_store.pop(name, None)
                 continue
 
-        if _is_init_var(annotation):  # type: ignore[arg-type] # annotation is never None
+        if _is_init_var(annotation):
             init_var = True
             if isinstance(annotation, nodes.Subscript):
                 annotation = annotation.slice
@@ -426,13 +433,9 @@ def infer_dataclass_attribute(
         yield Uninferable
         return
 
-    annotation, value = assign.annotation, assign.value
-    if value is not None:
-        yield from value.infer(context=ctx)
-    if annotation is not None:
-        yield from infer_instance_from_annotation(annotation, ctx=ctx)
-    else:
-        yield Uninferable
+    if assign.value is not None:
+        yield from assign.value.infer(context=ctx)
+    yield from infer_instance_from_annotation(assign.annotation, ctx=ctx)
 
 
 def infer_dataclass_field_call(
@@ -449,7 +452,9 @@ def infer_dataclass_field_call(
         if default_type == "default":
             yield from default.infer(context=ctx)
         else:
-            new_call = parse(default.as_string()).body[0].value
+            new_expr = parse(default.as_string()).body[0]
+            assert isinstance(new_expr, nodes.Expr)
+            new_call = new_expr.value
             new_call.parent = node.parent
             yield from new_call.infer(context=ctx)
 

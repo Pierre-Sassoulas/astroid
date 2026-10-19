@@ -34,7 +34,7 @@ def _hashlib_transform() -> nodes.Module:
             return 1
     """
 
-    algorithms_with_signature = dict.fromkeys(
+    algorithms_with_signature: dict[str, tuple[str, str]] = dict.fromkeys(
         [
             "md5",
             "sha1",

@@ -4,19 +4,25 @@
 
 from __future__ import annotations
 
-from astroid import arguments, nodes
+from collections.abc import Iterator
+
+from astroid import arguments, bases, nodes
 from astroid.context import InferenceContext
 from astroid.exceptions import UseInferenceDefault
 from astroid.inference_tip import inference_tip
 from astroid.manager import AstroidManager
 
 
-def infer_namespace(node, context: InferenceContext | None = None):
+def infer_namespace(
+    node: nodes.Call, context: InferenceContext | None = None
+) -> Iterator[bases.Instance]:
     callsite = arguments.CallSite.from_call(node, context=context)
     if not callsite.keyword_arguments:
         # Cannot make sense of it.
         raise UseInferenceDefault()
 
+    # The call comes from parsed source, so it has a position.
+    assert node.lineno is not None and node.col_offset is not None
     class_node = nodes.ClassDef(
         "Namespace",
         lineno=node.lineno,
@@ -33,7 +39,7 @@ def infer_namespace(node, context: InferenceContext | None = None):
     return iter((class_node.instantiate_class(),))
 
 
-def _looks_like_namespace(node) -> bool:
+def _looks_like_namespace(node: nodes.Call) -> bool:
     func = node.func
     if isinstance(func, nodes.Attribute):
         return (

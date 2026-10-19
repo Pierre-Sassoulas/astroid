@@ -4,6 +4,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+
 from astroid import context, nodes
 from astroid.brain.helpers import register_module_extender
 from astroid.builder import _extract_single_node, parse
@@ -70,16 +72,25 @@ def _looks_like_pattern_or_match(node: nodes.Call) -> bool:
     )
 
 
-def infer_pattern_match(node: nodes.Call, ctx: context.InferenceContext | None = None):
+def infer_pattern_match(
+    node: nodes.Call, ctx: context.InferenceContext | None = None
+) -> Iterator[nodes.ClassDef]:
     """Infer regex.Pattern and regex.Match as classes.
 
     For PY39+ add `__class_getitem__`.
     """
+    # _looks_like_pattern_or_match() checked that the call is the value of
+    # an assignment to one name, in a module parsed from source.
+    assign = node.parent
+    assert isinstance(assign, nodes.Assign)
+    target = assign.targets[0]
+    assert isinstance(target, nodes.AssignName)
+    assert node.lineno is not None and node.col_offset is not None
     class_def = nodes.ClassDef(
-        name=node.parent.targets[0].name,
+        name=target.name,
         lineno=node.lineno,
         col_offset=node.col_offset,
-        parent=node.parent,
+        parent=assign,
         end_lineno=node.end_lineno,
         end_col_offset=node.end_col_offset,
     )

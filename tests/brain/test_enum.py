@@ -615,3 +615,18 @@ class EnumBrainTest(unittest.TestCase):
         # Inference must not raise ``DuplicateBasesError``.
         inferred = next(node.infer())
         assert isinstance(inferred, nodes.ClassDef)
+
+    def test_enum_member_assigned_with_attribute_target(self) -> None:
+        """An assignment that also sets an attribute only defines the names.
+
+        It used to crash the enum transform with an AttributeError.
+        """
+        node = builder.extract_node("""
+        import enum
+
+        class Color(enum.Enum):  #@
+            RED, other.attr = 1, 2
+        """)
+        inferred = next(node.infer())
+        assert isinstance(inferred, nodes.ClassDef)
+        assert [member.name for member in inferred.getattr("RED")] == ["RED"]

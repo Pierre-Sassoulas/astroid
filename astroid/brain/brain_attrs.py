@@ -46,7 +46,9 @@ ATTRS_NAMES = frozenset(
 )
 
 
-def is_decorated_with_attrs(node, decorator_names=ATTRS_NAMES) -> bool:
+def is_decorated_with_attrs(
+    node: nodes.ClassDef, decorator_names: frozenset[str] = ATTRS_NAMES
+) -> bool:
     """Return whether a decorated node has an attr decorator applied."""
     if not node.decorators:
         return False
@@ -88,7 +90,7 @@ def attr_attributes_transform(node: nodes.ClassDef) -> None:
 
         targets = (
             cdef_body_node.targets
-            if hasattr(cdef_body_node, "targets")
+            if isinstance(cdef_body_node, nodes.Assign)
             else [cdef_body_node.target]
         )
         for target in targets:
