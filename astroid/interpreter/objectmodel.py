@@ -30,7 +30,6 @@ from collections.abc import Iterator
 from functools import lru_cache
 from typing import TYPE_CHECKING, Generic, Literal, Self, TypeVar, cast
 
-import astroid
 from astroid import bases, nodes, util
 from astroid.context import InferenceContext, copy_context
 from astroid.exceptions import AttributeInferenceError, InferenceError, NoDefault
@@ -524,7 +523,10 @@ class BaseFunctionModel(ObjectModel[_FunctionT_co]):
                     "end_lineno": func.end_lineno,
                     "end_col_offset": func.end_col_offset,
                 }
-                if isinstance(func, astroid.objects.PartialFunction):
+                # pylint: disable-next=import-outside-toplevel; circular import
+                from astroid import objects
+
+                if isinstance(func, objects.PartialFunction):
                     new_func_kwargs["filled_args"] = func.filled_args
                     new_func_kwargs["filled_keywords"] = func.filled_keywords
 
@@ -985,7 +987,7 @@ class DictModel(ObjectModel["nodes.Dict"]):
     ) -> bases.BoundMethod:
         """Generate a bound method that can infer the given *obj*."""
 
-        class DictMethodBoundMethod(astroid.BoundMethod):
+        class DictMethodBoundMethod(bases.BoundMethod):
             def infer_call_result(
                 self,
                 caller: SuccessfulInferenceResult | None,
