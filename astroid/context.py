@@ -204,7 +204,7 @@ def copy_context(context: InferenceContext | None) -> InferenceContext:
 
 
 def bind_context_to_node(
-    context: InferenceContext | None, node: SuccessfulInferenceResult
+    context: InferenceContext | None, node: SuccessfulInferenceResult | None
 ) -> InferenceContext:
     """Give a context a boundnode
     to retrieve the correct function name or attribute value

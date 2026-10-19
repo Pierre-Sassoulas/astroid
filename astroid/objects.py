@@ -248,8 +248,11 @@ class ExceptionInstance(bases.Instance):
     the case of .args.
     """
 
+    # A cached_property can be set like the attribute it overrides
     @cached_property
-    def special_attributes(self) -> objectmodel.ObjectModel:
+    def special_attributes(  # type: ignore[override]
+        self,
+    ) -> objectmodel.ExceptionInstanceModel:
         qname = self.qname()
         instance = objectmodel.BUILTIN_EXCEPTIONS.get(
             qname, objectmodel.ExceptionInstanceModel
