@@ -72,7 +72,7 @@ class Super(node_classes.NodeNG):
         self,
         mro_pointer: SuccessfulInferenceResult,
         mro_type: SuccessfulInferenceResult,
-        self_class: scoped_nodes.ClassDef,
+        self_class: scoped_nodes.ClassDef | None,
         scope: scoped_nodes.FunctionDef,
         call: node_classes.Call,
     ) -> None:
@@ -296,7 +296,7 @@ class PartialFunction(scoped_nodes.FunctionDef):
         name: str | None = None,
         lineno: int | None = None,
         col_offset: int | None = None,
-        parent: NodeNG | None = None,
+        parent: NodeNG | bases.Proxy | None = None,
         *,
         end_lineno: int | None = None,
         end_col_offset: int | None = None,
@@ -364,7 +364,14 @@ node_classes.Dict.__bases__ = (NodeNG, DictInstance)
 class Property(scoped_nodes.FunctionDef):
     """Class representing a Python property."""
 
-    def __init__(self, function, name=None, lineno=None, col_offset=None, parent=None):
+    def __init__(
+        self,
+        function: scoped_nodes.FunctionDef | scoped_nodes.Lambda,
+        name: str | None = None,
+        lineno: int | None = None,
+        col_offset: int | None = None,
+        parent: NodeNG | bases.Proxy | None = None,
+    ) -> None:
         self.function = function
         super().__init__(
             name,
