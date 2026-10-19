@@ -2451,6 +2451,13 @@ def test_dict_getitem_missing_key_error_message() -> None:
     assert str(excinfo.value).startswith("Key <Const.int")
 
 
+def test_call_of_object_without_call_result() -> None:
+    """Calling something that cannot infer a call result infers nothing."""
+    node = extract_node("import os\nos()")
+    with pytest.raises(InferenceError):
+        node.inferred()
+
+
 def test_infer_argument_sharing_vararg_name() -> None:
     """Inferring such an argument yields ``Uninferable`` rather than crashing."""
     node = extract_node("def f(x, *y, y: tuple[x]): ...")
