@@ -1125,7 +1125,6 @@ class PropertyModel(ObjectModel["Property"]):
                 caller: SuccessfulInferenceResult | None,
                 context: InferenceContext | None = None,
             ) -> Iterator[InferenceResult]:
-                nonlocal func_setter
                 if caller and len(caller.args) != 2:
                     raise InferenceError(
                         "fset() needs two arguments", target=self, context=context
