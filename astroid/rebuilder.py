@@ -761,8 +761,11 @@ class TreeRebuilder:
             end_col_offset=node.end_col_offset,
             parent=parent,
         )
+        target = self.visit(node.target, newnode)
+        # A target in store context: AssignName, AssignAttr or Subscript
+        assert isinstance(target, (nodes.AssignName, nodes.AssignAttr, nodes.Subscript))
         newnode.postinit(
-            target=self.visit(node.target, newnode),
+            target=target,
             annotation=self.visit(node.annotation, newnode),
             simple=node.simple,
             value=self.visit(node.value, newnode),
@@ -811,9 +814,10 @@ class TreeRebuilder:
             end_col_offset=node.end_col_offset,
             parent=parent,
         )
-        newnode.postinit(
-            self.visit(node.target, newnode), self.visit(node.value, newnode)
-        )
+        target = self.visit(node.target, newnode)
+        # A target in store context: AssignName, AssignAttr or Subscript
+        assert isinstance(target, (nodes.AssignName, nodes.AssignAttr, nodes.Subscript))
+        newnode.postinit(target, self.visit(node.value, newnode))
         return newnode
 
     def visit_binop(self, node: ast.BinOp, parent: nodes.NodeNG) -> nodes.BinOp:
