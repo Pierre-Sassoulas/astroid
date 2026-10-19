@@ -11,7 +11,7 @@ from __future__ import annotations
 import collections
 import collections.abc
 from collections.abc import Iterable, Iterator
-from typing import TYPE_CHECKING, Any, ClassVar, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 from astroid import decorators, nodes
 from astroid.context import (
@@ -119,14 +119,18 @@ class Proxy:
     if new instance attributes are created. See the Const class
     """
 
-    _proxied: nodes.ClassDef | nodes.FunctionDef | nodes.Lambda | UnboundMethod
+    # The proxied object: a class for instances, a function for methods, a
+    # container for the dict views...
+    _proxied: SuccessfulInferenceResult
 
-    def __init__(
-        self,
-        proxied: (
-            nodes.ClassDef | nodes.FunctionDef | nodes.Lambda | UnboundMethod | None
-        ) = None,
-    ) -> None:
+    # Not set by Proxy, but set on some proxies (the object model and the
+    # builtin transforms place them in the tree); reads of unset ones go
+    # through __getattr__ to the proxied node.
+    parent: nodes.NodeNG | Proxy | None
+    lineno: int | None
+    col_offset: int | None
+
+    def __init__(self, proxied: SuccessfulInferenceResult | None = None) -> None:
         if proxied is None:
             # This is a hack to allow calling this __init__ during bootstrapping of
             # builtin classes and their docstrings.
@@ -244,7 +248,9 @@ class BaseInstance(Proxy):
     # the base class.
     _proxied: nodes.ClassDef  # pyright: ignore[reportIncompatibleVariableOverride]
 
-    special_attributes: ClassVar[objectmodel.ObjectModel]
+    # A class attribute, except for exception instances (objects.py) whose
+    # model depends on their class
+    special_attributes: objectmodel.ObjectModel[BaseInstance]
 
     def display_type(self) -> str:
         return "Instance of"
@@ -554,7 +560,7 @@ class BoundMethod(UnboundMethod):
     def __init__(
         self,
         proxy: nodes.FunctionDef | nodes.Lambda | UnboundMethod,
-        bound: SuccessfulInferenceResult,
+        bound: SuccessfulInferenceResult | None,
         original_caller: SuccessfulInferenceResult | None = None,
     ) -> None:
         super().__init__(proxy)
@@ -725,7 +731,9 @@ class Generator(BaseInstance):
     # We defer initialization of special_attributes to the __init__ method since the constructor
     # of GeneratorModel requires the raw_building to be complete
     # TODO: This should probably be refactored.
-    special_attributes: ClassVar[objectmodel.GeneratorBaseModel]
+    special_attributes: objectmodel.GeneratorBaseModel
+    # Generators are built from (and placed under) their function
+    parent: nodes.FunctionDef
 
     def __init__(
         self,
@@ -733,7 +741,7 @@ class Generator(BaseInstance):
         generator_initial_context: InferenceContext | None = None,
     ) -> None:
         super().__init__()
-        self.parent = parent
+        self.parent = parent  # pyright: ignore[reportIncompatibleVariableOverride]
         self._call_context = copy_context(generator_initial_context)
 
         # See comment above: this is a deferred initialization. Generators

@@ -10,18 +10,19 @@ It is not considered public.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
 from astroid import nodes
-from astroid.typing import SuccessfulInferenceResult
+from astroid.typing import InferenceResult
 
 if TYPE_CHECKING:
     from astroid.nodes import _base_nodes
 
 
 def _get_filtered_node_statements(
-    base_node: nodes.NodeNG, stmt_nodes: list[nodes.NodeNG]
-) -> list[tuple[nodes.NodeNG, _base_nodes.Statement]]:
+    base_node: nodes.NodeNG, stmt_nodes: Sequence[InferenceResult]
+) -> list[tuple[InferenceResult, _base_nodes.Statement]]:
     statements = [(node, node.statement()) for node in stmt_nodes]
     # Next we check if we have ExceptHandlers that are parent
     # of the underlying variable, in which case the last one survives
@@ -49,10 +50,10 @@ def _get_if_statement_ancestor(node: nodes.NodeNG) -> nodes.If | None:
 
 def _filter_stmts(
     base_node: _base_nodes.LookupMixIn,
-    stmts: list[SuccessfulInferenceResult],
+    stmts: Sequence[InferenceResult],
     frame: nodes.LocalsDictNodeNG,
     offset: int,
-) -> list[nodes.NodeNG]:
+) -> list[InferenceResult]:
     """Filter the given list of statements to remove ignorable statements.
 
     If base_node is not a frame itself and the name is found in the inner
@@ -111,7 +112,7 @@ def _filter_stmts(
         # disabling lineno filtering
         mylineno = 0
 
-    _stmts: list[nodes.NodeNG] = []
+    _stmts: list[InferenceResult] = []
     _stmt_parents = []
     statements = _get_filtered_node_statements(base_node, stmts)
     for node, stmt in statements:

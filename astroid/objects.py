@@ -53,7 +53,7 @@ class FrozenSet(node_classes.BaseContainer):
         return frozenset_class
 
 
-class Super(node_classes.NodeNG):
+class Super(NodeNG):
     """Proxy class over a super call.
 
     This class offers almost the same behaviour as Python's super,
@@ -72,7 +72,7 @@ class Super(node_classes.NodeNG):
         self,
         mro_pointer: SuccessfulInferenceResult,
         mro_type: SuccessfulInferenceResult,
-        self_class: scoped_nodes.ClassDef,
+        self_class: scoped_nodes.ClassDef | None,
         scope: scoped_nodes.FunctionDef,
         call: node_classes.Call,
     ) -> None:
@@ -248,8 +248,11 @@ class ExceptionInstance(bases.Instance):
     the case of .args.
     """
 
+    # A cached_property can be set like the attribute it overrides
     @cached_property
-    def special_attributes(self) -> objectmodel.ObjectModel:
+    def special_attributes(  # type: ignore[override]
+        self,
+    ) -> objectmodel.ExceptionInstanceModel:
         qname = self.qname()
         instance = objectmodel.BUILTIN_EXCEPTIONS.get(
             qname, objectmodel.ExceptionInstanceModel
@@ -293,7 +296,7 @@ class PartialFunction(scoped_nodes.FunctionDef):
         name: str | None = None,
         lineno: int | None = None,
         col_offset: int | None = None,
-        parent: NodeNG | None = None,
+        parent: NodeNG | bases.Proxy | None = None,
         *,
         end_lineno: int | None = None,
         end_col_offset: int | None = None,
@@ -345,7 +348,7 @@ class PartialFunction(scoped_nodes.FunctionDef):
                     context.callcontext.keywords.append((keyword, value))
 
             call_context_args = context.callcontext.args or []
-            context.callcontext.args = self.filled_args + call_context_args
+            context.callcontext.args = [*self.filled_args, *call_context_args]
 
         return super().infer_call_result(caller=caller, context=context)
 
@@ -361,7 +364,14 @@ node_classes.Dict.__bases__ = (NodeNG, DictInstance)
 class Property(scoped_nodes.FunctionDef):
     """Class representing a Python property."""
 
-    def __init__(self, function, name=None, lineno=None, col_offset=None, parent=None):
+    def __init__(
+        self,
+        function: scoped_nodes.FunctionDef | scoped_nodes.Lambda,
+        name: str | None = None,
+        lineno: int | None = None,
+        col_offset: int | None = None,
+        parent: NodeNG | bases.Proxy | None = None,
+    ) -> None:
         self.function = function
         super().__init__(
             name,

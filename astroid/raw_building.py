@@ -25,6 +25,7 @@ from astroid.nodes import node_classes
 
 if TYPE_CHECKING:
     from astroid.manager import AstroidManager
+    from astroid.typing import SuccessfulInferenceResult
 
 
 _FunctionTypes = (
@@ -285,7 +286,8 @@ def _would_create_parent_cycle(node: nodes.NodeNG, child: nodes.NodeNG) -> bool:
 
     That happens when ``child`` already is ``node`` or one of its ancestors.
     """
-    ancestor: nodes.NodeNG | None = node
+    # Parents can be proxies (the object model builds nodes under them)
+    ancestor: SuccessfulInferenceResult | None = node
     while ancestor is not None:
         if ancestor is child:
             return True
@@ -669,8 +671,9 @@ def _astroid_bootstrapping() -> None:
         elif cls is TYPE_ELLIPSIS:
             proxy = build_class("Ellipsis", astroid_builtin)
         else:
-            proxy = astroid_builtin.getattr(cls.__name__)[0]
-            assert isinstance(proxy, nodes.ClassDef)
+            builtin_class = astroid_builtin.getattr(cls.__name__)[0]
+            assert isinstance(builtin_class, nodes.ClassDef)
+            proxy = builtin_class
         if cls in (dict, list, set, tuple):
             # Dict and the containers are instances of their builtin class
             assert issubclass(node_cls, bases.BaseInstance)

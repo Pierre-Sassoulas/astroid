@@ -170,7 +170,7 @@ def const_infer_binary_op(
     operator: str,
     other: InferenceResult,
     context: InferenceContext,
-    _: SuccessfulInferenceResult,
+    method: SuccessfulInferenceResult,
 ) -> Generator[ConstFactoryResult | util.UninferableBase]:
     not_implemented = nodes.Const(NotImplemented)
     if isinstance(other, nodes.Const):

@@ -45,7 +45,7 @@ def _function_type(
 
 def _object_type(
     node: InferenceResult, context: InferenceContext | None = None
-) -> Generator[InferenceResult | None]:
+) -> Generator[InferenceResult]:
     astroid_manager = manager.AstroidManager()
     builtins = astroid_manager.builtins_module
     context = context or InferenceContext()
@@ -80,7 +80,7 @@ def _object_type(
 
 def object_type(
     node: InferenceResult, context: InferenceContext | None = None
-) -> InferenceResult | None:
+) -> InferenceResult:
     """Obtain the type of the given node.
 
     This is used to implement the ``type`` builtin, which means that it's
@@ -352,7 +352,8 @@ def _higher_function_scope(node: nodes.NodeNG) -> nodes.FunctionDef | None:
         otherwise an instance of :class:`astroid.nodes.scoped_nodes.Function`,
         which encloses the given node.
     """
-    current = node
+    # Parents can be proxies (the object model builds nodes under them)
+    current: SuccessfulInferenceResult = node
     while current.parent and not isinstance(current.parent, nodes.FunctionDef):
         current = current.parent
     # Nodes are always truthy: the loop stopped on a function or the root

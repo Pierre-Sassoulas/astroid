@@ -27,7 +27,7 @@ from astroid.exceptions import AstroidBuildingError, AstroidSyntaxError, Inferen
 
 if TYPE_CHECKING:
     from astroid.manager import AstroidManager
-    from astroid.typing import InferenceResult
+    from astroid.typing import InferenceResult, SuccessfulInferenceResult
 
 # The name of the transient function that is used to
 # wrap expressions to be extracted when calling
@@ -228,7 +228,8 @@ class AstroidBuilder(raw_building.InspectBuilder):
         Resort the locals if coming from a delayed node
         """
 
-        def add_local(parent_or_root: nodes.NodeNG, name: str) -> None:
+        # The parent may be a proxy, which sets locals on the node it proxies
+        def add_local(parent_or_root: SuccessfulInferenceResult, name: str) -> None:
             parent_or_root.set_local(name, node)
             my_list = parent_or_root.scope().locals[name]
             my_list.sort(key=lambda n: n.fromlineno or 0)
