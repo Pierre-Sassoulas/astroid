@@ -1609,3 +1609,19 @@ def test_property_default_huge_int_does_not_crash() -> None:
     assert len(inferred) == 1
     assert isinstance(inferred[0], bases.Instance)
     assert inferred[0].name == "A"
+
+
+def test_dataclass_field_annotated_with_a_module() -> None:
+    """A module annotation is not an ``InitVar``: the field stays an attribute."""
+    node = astroid.extract_node("""
+    import os
+    from dataclasses import dataclass
+
+    @dataclass
+    class A:
+        x: os
+
+    A.__init__ #@
+    """)
+    init = next(node.infer())
+    assert [arg.name for arg in init.args.args] == ["self", "x"]

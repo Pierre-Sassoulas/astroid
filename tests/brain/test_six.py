@@ -7,6 +7,8 @@ from __future__ import annotations
 import unittest
 from typing import Any
 
+import pytest
+
 import astroid
 from astroid import MANAGER, builder, nodes
 from astroid.nodes.scoped_nodes import ClassDef
@@ -177,3 +179,22 @@ class SixBrainTest(unittest.TestCase):
             assert getattr(inferred, "_test_transform", None) == 314
         finally:
             MANAGER.unregister_transform(nodes.ClassDef, transform_class)
+
+
+@pytest.mark.parametrize(
+    "base",
+    [
+        "lib.six.with_metaclass(Meta)",  # the module is not a plain name
+        "make()(Meta)",  # the function is neither a name nor an attribute
+        "with_metaclass(Meta)",  # ``with_metaclass`` is not imported
+    ],
+)
+def test_not_six_with_metaclass(base: str) -> None:
+    node = builder.extract_node(f"""
+    class Meta(type):
+        pass
+    class A({base}):  #@
+        pass
+    """)
+    inferred = next(node.infer())
+    assert inferred.declared_metaclass() is None

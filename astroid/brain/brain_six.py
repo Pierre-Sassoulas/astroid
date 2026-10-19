@@ -197,19 +197,27 @@ def _looks_like_nested_from_six_with_metaclass(node) -> bool:
     base = node.bases[0]
     if not isinstance(base, nodes.Call):
         return False
-    try:
-        if hasattr(base.func, "expr"):
-            # format when explicit 'six.with_metaclass' is used
-            mod = base.func.expr.name
-            func = base.func.attrname
-            func = f"{mod}.{func}"
-        else:
-            # format when 'with_metaclass' is used directly (local import from six)
-            # check reference module to avoid 'with_metaclass' name clashes
-            mod = base.parent.parent
+    if isinstance(base.func, nodes.Attribute):
+        # format when explicit 'six.with_metaclass' is used
+        if not isinstance(base.func.expr, nodes.Name):
+            return False
+        mod = base.func.expr.name
+        func = base.func.attrname
+        func = f"{mod}.{func}"
+    elif isinstance(base.func, nodes.Name):
+        # format when 'with_metaclass' is used directly (local import from six)
+        # check reference module to avoid 'with_metaclass' name clashes
+        mod = base.parent.parent
+        if not isinstance(mod, nodes.LocalsDictNodeNG):
+            return False
+        try:
             import_from = mod.locals["with_metaclass"][0]
-            func = f"{import_from.modname}.{base.func.name}"
-    except (AttributeError, KeyError, IndexError):
+        except (KeyError, IndexError):
+            return False
+        if not isinstance(import_from, nodes.ImportFrom):
+            return False
+        func = f"{import_from.modname}.{base.func.name}"
+    else:
         return False
     return func == SIX_WITH_METACLASS
 

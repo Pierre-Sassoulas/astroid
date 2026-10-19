@@ -43,7 +43,7 @@ def _looks_like_statistics_quantiles(node: nodes.Call) -> bool:
                             and any(name[0] == "quantiles" for name in stmt.names or [])
                         ):
                             return True
-            except (AttributeError, TypeError):
+            except TypeError:
                 # If we can't determine the import context, be conservative
                 pass
     return False

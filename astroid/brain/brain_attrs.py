@@ -88,7 +88,7 @@ def attr_attributes_transform(node: nodes.ClassDef) -> None:
 
         targets = (
             cdef_body_node.targets
-            if hasattr(cdef_body_node, "targets")
+            if isinstance(cdef_body_node, nodes.Assign)
             else [cdef_body_node.target]
         )
         for target in targets:

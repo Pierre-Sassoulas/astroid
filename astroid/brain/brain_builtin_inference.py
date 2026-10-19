@@ -12,7 +12,7 @@ from collections.abc import Callable, Iterable, Iterator
 from functools import lru_cache, partial
 from typing import NoReturn, cast
 
-from astroid import arguments, helpers, nodes, objects, util
+from astroid import arguments, bases, helpers, nodes, objects, util
 from astroid.bases import Instance
 from astroid.builder import AstroidBuilder
 from astroid.context import InferenceContext
@@ -246,7 +246,7 @@ def register_builtin_transform(
                 result.lineno = node.lineno
             # Can be a 'Module' see https://github.com/pylint-dev/pylint/issues/4671
             # We don't have a regression test on this one: tread carefully
-            if hasattr(result, "col_offset") and result.col_offset is None:
+            if result.col_offset is None:
                 result.col_offset = node.col_offset
         return iter([result])
 
@@ -607,7 +607,17 @@ def infer_getattr(node, context: InferenceContext | None = None):
     if (
         isinstance(obj, util.UninferableBase)
         or isinstance(attr, util.UninferableBase)
-        or not hasattr(obj, "igetattr")
+        or not isinstance(
+            obj,
+            (
+                bases.Proxy,
+                nodes.ClassDef,
+                nodes.FunctionDef,
+                nodes.Module,
+                nodes.Slice,
+                objects.Super,
+            ),
+        )
     ):
         return util.Uninferable
 
@@ -638,7 +648,18 @@ def infer_hasattr(node, context: InferenceContext | None = None):
         if (
             isinstance(obj, util.UninferableBase)
             or isinstance(attr, util.UninferableBase)
-            or not hasattr(obj, "getattr")
+            or not isinstance(
+                obj,
+                (
+                    bases.Proxy,
+                    nodes.ClassDef,
+                    nodes.FunctionDef,
+                    nodes.Lambda,
+                    nodes.Module,
+                    nodes.Slice,
+                    objects.Super,
+                ),
+            )
         ):
             return util.Uninferable
         obj.getattr(attr, context=context)
@@ -708,7 +729,7 @@ def infer_property(
     prop_func.postinit(
         body=[],
         args=inferred.args,
-        doc_node=getattr(inferred, "doc_node", None),
+        doc_node=inferred.doc_node if isinstance(inferred, nodes.FunctionDef) else None,
     )
     return prop_func
 
