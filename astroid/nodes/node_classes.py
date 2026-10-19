@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import abc
 import ast
+import builtins
 import itertools
 import operator
 import typing
@@ -234,10 +235,10 @@ def _infer_slice(
 
 def _container_getitem(
     instance: List | Tuple,
-    elts: list[SuccessfulInferenceResult],
+    elts: list[InferenceResult],
     index: SuccessfulInferenceResult,
     context: InferenceContext | None = None,
-) -> SuccessfulInferenceResult:
+) -> InferenceResult:
     """Get a slice or an item, using the given *index*, for the given sequence."""
     try:
         if isinstance(index, Slice):
@@ -284,7 +285,7 @@ class BaseContainer(_base_nodes.ParentAssignNode, Instance, metaclass=abc.ABCMet
         end_lineno: int | None,
         end_col_offset: int | None,
     ) -> None:
-        self.elts: list[SuccessfulInferenceResult] = []
+        self.elts: list[InferenceResult] = []
         """The elements in the node."""
 
         super().__init__(
@@ -295,7 +296,7 @@ class BaseContainer(_base_nodes.ParentAssignNode, Instance, metaclass=abc.ABCMet
             parent=parent,
         )
 
-    def postinit(self, elts: list[SuccessfulInferenceResult]) -> None:
+    def postinit(self, elts: list[InferenceResult]) -> None:
         self.elts = elts
 
     @classmethod
@@ -316,7 +317,7 @@ class BaseContainer(_base_nodes.ParentAssignNode, Instance, metaclass=abc.ABCMet
         node.elts = [const_factory(e) if _is_const(e) else e for e in elts]
         return node
 
-    def itered(self):
+    def itered(self) -> list[InferenceResult]:
         """An iterator over the elements this node contains.
 
         :returns: The contents of this node.
@@ -338,13 +339,16 @@ class BaseContainer(_base_nodes.ParentAssignNode, Instance, metaclass=abc.ABCMet
         :returns: The name of the type.
         """
 
-    # Inference puts inferred values, such as Instance proxies, in elts, so the
-    # children of a container are wider than those of NodeNG.get_children.
-    def get_children(self) -> Iterator[SuccessfulInferenceResult]:  # type: ignore[override] # pyright: ignore[reportIncompatibleMethodOverride]
+    # Inference puts inferred values, such as Instance proxies or Uninferable,
+    # in elts, so the children of a container are wider than those of
+    # NodeNG.get_children.
+    def get_children(self) -> Iterator[InferenceResult]:  # type: ignore[override] # pyright: ignore[reportIncompatibleMethodOverride]
         yield from self.elts
 
     @decorators.raise_if_nothing_inferred
-    def _infer(self, context: InferenceContext | None = None) -> Generator[Self]:
+    def _infer(
+        self, context: InferenceContext | None = None
+    ) -> Generator[BaseContainer]:
         has_starred_named_expr = any(
             isinstance(e, (Starred, NamedExpr)) for e in self.elts
         )
@@ -365,9 +369,9 @@ class BaseContainer(_base_nodes.ParentAssignNode, Instance, metaclass=abc.ABCMet
 
     def _infer_sequence_helper(
         self, context: InferenceContext | None = None
-    ) -> list[SuccessfulInferenceResult]:
+    ) -> list[InferenceResult]:
         """Infer all values based on BaseContainer.elts."""
-        values: list[SuccessfulInferenceResult] = []
+        values: list[InferenceResult] = []
 
         for elt in self.elts:
             if isinstance(elt, Starred):
@@ -1300,7 +1304,7 @@ class AnnAssign(_base_nodes.AssignTypeNode, _base_nodes.Statement):
     _astroid_fields = ("target", "annotation", "value")
     _other_fields = ("simple",)
 
-    target: Name | Attribute | Subscript
+    target: AssignName | AssignAttr | Subscript
     """What is being assigned to."""
 
     annotation: NodeNG
@@ -1314,7 +1318,7 @@ class AnnAssign(_base_nodes.AssignTypeNode, _base_nodes.Statement):
 
     def postinit(
         self,
-        target: Name | Attribute | Subscript,
+        target: AssignName | AssignAttr | Subscript,
         annotation: NodeNG,
         simple: int,
         value: NodeNG | None,
@@ -1353,7 +1357,7 @@ class AugAssign(
     _astroid_fields = ("target", "value")
     _other_fields = ("op",)
 
-    target: Name | Attribute | Subscript
+    target: AssignName | AssignAttr | Subscript
     """What is being assigned to."""
 
     value: NodeNG
@@ -1383,7 +1387,9 @@ class AugAssign(
             parent=parent,
         )
 
-    def postinit(self, target: Name | Attribute | Subscript, value: NodeNG) -> None:
+    def postinit(
+        self, target: AssignName | AssignAttr | Subscript, value: NodeNG
+    ) -> None:
         self.target = target
         self.value = value
 
@@ -2178,7 +2184,7 @@ class Const(_base_nodes.NoChildrenNode, Instance):
         """
         return False
 
-    def itered(self):
+    def itered(self) -> list[ConstFactoryResult]:
         """An iterator over the elements this node contains.
 
         :returns: The contents of this node.
@@ -2435,7 +2441,7 @@ class Dict(NodeNG, Instance):
             return self.items[-1][1]
         return None
 
-    def itered(self):
+    def itered(self) -> list[InferenceResult]:
         """An iterator over the keys this node contains.
 
         :returns: The keys of this node.
@@ -2586,7 +2592,11 @@ class Expr(_base_nodes.Statement):
 class EmptyNode(_base_nodes.NoChildrenNode):
     """Holds an arbitrary object in the :attr:`~astroid.nodes.LocalsDictNodeNG.locals`."""
 
-    object = None
+    object: builtins.object = None
+    """The living object this node stands for."""
+
+    attrname: str
+    """The name some brains give to the object, when they set one."""
 
     def __init__(
         self,
@@ -3358,7 +3368,7 @@ class List(BaseContainer):
 
     def getitem(
         self, index: SuccessfulInferenceResult, context: InferenceContext | None = None
-    ) -> SuccessfulInferenceResult:
+    ) -> InferenceResult:
         """Get an item from this node.
 
         :param index: The node to use as a subscript index.
@@ -3628,8 +3638,8 @@ class Slice(NodeNG):
         # pylint: disable-next=import-outside-toplevel
         from astroid.nodes import ClassDef
 
-        builtins = AstroidManager().builtins_module
-        slice_class = builtins.getattr("slice")[0]
+        builtins_module = AstroidManager().builtins_module
+        slice_class = builtins_module.getattr("slice")[0]
         assert isinstance(slice_class, ClassDef)
         return slice_class
 
@@ -4134,7 +4144,7 @@ class Tuple(BaseContainer):
 
     def getitem(
         self, index: SuccessfulInferenceResult, context: InferenceContext | None = None
-    ) -> SuccessfulInferenceResult:
+    ) -> InferenceResult:
         """Get an item from this node.
 
         :param index: The node to use as a subscript index.
@@ -4432,8 +4442,8 @@ class UnaryOp(_base_nodes.OperatorNode):
                 # The operand doesn't support this operation.
                 yield util.BadUnaryOperationMessage(operand, self.op, exc)
             except AttributeError as exc:
-                meth = UNARY_OP_METHOD[self.op]
-                if meth is None:
+                method_name = UNARY_OP_METHOD[self.op]
+                if method_name is None:
                     # `not node`. Determine node's boolean
                     # value and negate its result, unless it is
                     # Uninferable, which will be returned as is.
@@ -4451,15 +4461,16 @@ class UnaryOp(_base_nodes.OperatorNode):
 
                     try:
                         try:
-                            methods = dunder_lookup.lookup(operand, meth)
+                            methods = dunder_lookup.lookup(operand, method_name)
                         except AttributeInferenceError:
                             yield util.BadUnaryOperationMessage(operand, self.op, exc)
                             continue
 
-                        meth = methods[0]
-                        inferred = next(meth.infer(context=context), None)
+                        method = methods[0]
+                        inferred = next(method.infer(context=context), None)
                         if (
-                            isinstance(inferred, util.UninferableBase)
+                            inferred is None
+                            or isinstance(inferred, util.UninferableBase)
                             or not inferred.callable()
                         ):
                             continue
@@ -5051,7 +5062,7 @@ class NamedExpr(_base_nodes.AssignTypeNode):
 
         return self.parent.scope()
 
-    def set_local(self, name: str, stmt: NodeNG) -> None:
+    def set_local(self, name: str, stmt: InferenceResult) -> None:
         """Define that the given name is declared in the given statement node.
         NamedExpr's in Arguments, Keyword or Comprehension are evaluated in their
         parent's parent scope. So we add to their frame's locals.
@@ -5737,9 +5748,9 @@ CONST_CLS: dict[type, type[NodeNG]] = {
 
 def _create_basic_elements(
     value: Iterable[Any], node: List | Set | Tuple, building: set[int]
-) -> list[SuccessfulInferenceResult]:
+) -> list[InferenceResult]:
     """Create a list of nodes to function as the elements of a new node."""
-    elements: list[SuccessfulInferenceResult] = []
+    elements: list[InferenceResult] = []
     for element in value:
         # NOTE: avoid accessing any attributes of element in the loop.
         element_node = _const_factory(element, building)

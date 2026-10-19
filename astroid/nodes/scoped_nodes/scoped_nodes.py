@@ -345,12 +345,15 @@ class Module(LocalsDictNodeNG):
         return "Module"
 
     def getattr(
-        self, name, context: InferenceContext | None = None, ignore_locals=False
-    ):
+        self,
+        name: str,
+        context: InferenceContext | None = None,
+        ignore_locals: bool = False,
+    ) -> list[InferenceResult]:
         if not name:
             raise AttributeInferenceError(target=self, attribute=name, context=context)
 
-        result = []
+        result: list[InferenceResult] = []
         name_in_locals = name in self.locals
 
         if name in self.special_attributes and not ignore_locals and not name_in_locals:
@@ -943,7 +946,7 @@ class Lambda(_base_nodes.FilterStmtsBaseNode, LocalsDictNodeNG):
         self.args = args
         self.body = body
 
-    def pytype(self) -> Literal["builtins.instancemethod", "builtins.function"]:
+    def pytype(self) -> str:
         """Get the name of the type that this node represents.
 
         :returns: The name of the type.
@@ -1259,7 +1262,7 @@ class FunctionDef(
                             decorators.append(assign.value)
         return decorators
 
-    def pytype(self) -> Literal["builtins.instancemethod", "builtins.function"]:
+    def pytype(self) -> str:
         """Get the name of the type that this node represents.
 
         :returns: The name of the type.
@@ -1447,14 +1450,17 @@ class FunctionDef(
             and isinstance(self.parent.frame(), ClassDef)
         )
 
-    def decoratornames(self, context: InferenceContext | None = None) -> set[str]:
+    def decoratornames(
+        self, context: InferenceContext | None = None
+    ) -> set[str | util.UninferableBase]:
         """Get the qualified names of each of the decorators on this function.
 
         :param context:
             An inference context that can be passed to inference functions
-        :returns: The names of the decorators.
+        :returns: The names of the decorators, with Uninferable for a decorator
+            that infers to Uninferable.
         """
-        result = set()
+        result: set[str | util.UninferableBase] = set()
         decoratornodes = []
         if self.decorators is not None:
             decoratornodes += self.decorators.nodes
@@ -1524,7 +1530,7 @@ class FunctionDef(
 
     def _infer(
         self, context: InferenceContext | None = None
-    ) -> Generator[objects.Property | FunctionDef, None, InferenceErrorInfo]:
+    ) -> Generator[objects.Property | FunctionDef, None, InferenceErrorInfo | None]:
         from astroid import objects  # pylint: disable=import-outside-toplevel
 
         if not (self.decorators and bases._is_property(self)):
@@ -1839,7 +1845,7 @@ def _class_type(
     return klass._type
 
 
-def get_wrapping_class(node):
+def get_wrapping_class(node: NodeNG) -> ClassDef | None:
     """Get the class that wraps the given node.
 
     We consider that a class wraps a node if the class
@@ -1849,7 +1855,7 @@ def get_wrapping_class(node):
     :rtype: ClassDef or None
     """
 
-    klass = node.frame()
+    klass: FunctionDef | Module | ClassDef | Lambda | None = node.frame()
     while klass is not None and not isinstance(klass, ClassDef):
         if klass.parent is None:
             klass = None
@@ -1901,6 +1907,12 @@ class ClassDef(
     _metaclass: NodeNG | None = None
     _metaclass_hack = False
     hide = False
+
+    _all_bases_known: bool
+    """Whether every base of this class is known, cached by helpers.has_known_bases.
+
+    It is only set once computed.
+    """
     type = property(
         _class_type,
         doc=(
@@ -1975,13 +1987,15 @@ class ClassDef(
     def implicit_parameters(self) -> Literal[1]:
         return 1
 
-    def implicit_locals(self):
+    def implicit_locals(self) -> tuple[tuple[str, NodeNG], ...]:
         """Get implicitly defined class definition locals.
 
         :returns: the the name and Const pair for each local
         :rtype: tuple(tuple(str, node_classes.Const), ...)
         """
-        locals_ = (("__module__", self.special_attributes.attr___module__),)
+        locals_: tuple[tuple[str, NodeNG], ...] = (
+            ("__module__", self.special_attributes.attr___module__),
+        )
         # __qualname__ is defined in PEP3155
         locals_ += (
             ("__qualname__", self.special_attributes.attr___qualname__),
@@ -2100,7 +2114,7 @@ class ClassDef(
         except StopIteration as e:
             raise InferenceError(node=caller.args[1], context=context) from e
         if isinstance(class_bases, (node_classes.Tuple, node_classes.List)):
-            bases = []
+            bases: list[SuccessfulInferenceResult] = []
             for base in class_bases.itered():
                 inferred = next(base.infer(context=context), None)
                 if inferred:
@@ -2700,7 +2714,7 @@ class ClassDef(
             if isinstance(member, FunctionDef):
                 yield member
 
-    def implicit_metaclass(self) -> NodeNG:
+    def implicit_metaclass(self) -> ClassDef:
         """Get the implicit metaclass of the current class.
 
         This will return an instance of builtins.type.
@@ -2708,7 +2722,9 @@ class ClassDef(
         :returns: The metaclass.
         :rtype: type
         """
-        return builtin_lookup("type")[1][0]
+        metaclass = builtin_lookup("type")[1][0]
+        assert isinstance(metaclass, ClassDef)
+        return metaclass
 
     def declared_metaclass(
         self, context: InferenceContext | None = None
@@ -2775,7 +2791,9 @@ class ClassDef(
     def has_metaclass_hack(self) -> bool:
         return self._metaclass_hack
 
-    def _islots(self):
+    def _islots(
+        self,
+    ) -> Generator[node_classes.Const, None, list[InferenceResult] | None]:
         """Return an iterator with the inferred slots."""
         if "__slots__" not in self.locals:
             return None
@@ -2835,7 +2853,7 @@ class ClassDef(
 
         return None
 
-    def _slots(self):
+    def _slots(self) -> list[node_classes.Const] | list[InferenceResult] | None:
 
         slots = self._islots()
         try:
@@ -2843,13 +2861,14 @@ class ClassDef(
         except StopIteration as exc:
             # The class doesn't have a __slots__ definition or empty slots.
             if exc.args and exc.args[0] not in ("", None):
-                return exc.args[0]
+                empty_slots: list[InferenceResult] = exc.args[0]
+                return empty_slots
             return None
         return [first, *slots]
 
     # Cached, because inferring them all the time is expensive
     @cached_property
-    def _all_slots(self):
+    def _all_slots(self) -> list[node_classes.Const] | None:
         """Get all the slots for this node.
 
         :returns: The names of slots for this class.
@@ -2861,7 +2880,7 @@ class ClassDef(
 
         def grouped_slots(
             mro: list[ClassDef],
-        ) -> Iterator[NodeNG | None]:
+        ) -> Iterator[InferenceResult | None]:
             for cls in mro:
                 # Not interested in object, since it can't have slots.
                 if cls.qname() == "builtins.object":
@@ -2883,12 +2902,15 @@ class ClassDef(
             ) from e
 
         slots = list(grouped_slots(mro))
-        if not all(slot is not None for slot in slots):
+        # _islots only yields Const nodes, so this only drops the None of a
+        # class whose slots are unknown.
+        known_slots = [slot for slot in slots if isinstance(slot, node_classes.Const)]
+        if len(known_slots) != len(slots):
             return None
 
-        return sorted(set(slots), key=lambda item: item.value)
+        return sorted(set(known_slots), key=lambda item: item.value)
 
-    def slots(self):
+    def slots(self) -> list[node_classes.Const] | None:
         return self._all_slots
 
     def _inferred_bases(

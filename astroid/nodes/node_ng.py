@@ -261,7 +261,7 @@ class NodeNG:
             return attr
         return None
 
-    def node_ancestors(self) -> Iterator[NodeNG]:
+    def node_ancestors(self) -> Iterator[NodeNG | Proxy]:
         """Yield parent, grandparent, etc until there are no more."""
         parent = self.parent
         while parent is not None:
@@ -459,7 +459,7 @@ class NodeNG:
         """
         return lineno, self.tolineno
 
-    def set_local(self, name: str, stmt: NodeNG) -> None:
+    def set_local(self, name: str, stmt: InferenceResult) -> None:
         """Define that the given name is declared in the given statement node.
 
         This definition is stored on the parent scope node.
