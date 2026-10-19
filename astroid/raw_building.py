@@ -17,7 +17,7 @@ import types
 import warnings
 from collections.abc import Iterable
 from contextlib import redirect_stderr, redirect_stdout
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from astroid import bases, nodes
 from astroid.const import _EMPTY_OBJECT_MARKER, IS_PYPY
@@ -41,12 +41,17 @@ TYPE_NOTIMPLEMENTED = type(NotImplemented)
 TYPE_ELLIPSIS = type(...)
 
 
-def _attach_local_node(parent, node, name: str) -> None:
-    node.name = name  # needed by add_local_node
-    parent.add_local_node(node)
+def _attach_local_node(
+    parent: nodes.Module | nodes.ClassDef, node: nodes.NodeNG, name: str
+) -> None:
+    # The built nodes (EmptyNode, Const, ImportFrom) are named after their local
+    node.name = name  # type: ignore[attr-defined]
+    parent.add_local_node(node, name)
 
 
-def _add_dunder_class(func, parent: nodes.NodeNG, member) -> None:
+def _add_dunder_class(
+    func: nodes.FunctionDef, parent: nodes.NodeNG, member: object
+) -> None:
     """Add a __class__ member to the given func node, if we can determine it."""
     python_cls = member.__class__
     cls_name = getattr(python_cls, "__name__", None)
@@ -58,20 +63,26 @@ def _add_dunder_class(func, parent: nodes.NodeNG, member) -> None:
     func.instance_attrs["__class__"] = [ast_klass]
 
 
-def build_dummy(runtime_object) -> nodes.EmptyNode:
+def build_dummy(runtime_object: object) -> nodes.EmptyNode:
     enode = nodes.EmptyNode()
     enode.object = runtime_object
     return enode
 
 
-def attach_dummy_node(node, name: str, runtime_object=_EMPTY_OBJECT_MARKER) -> None:
+def attach_dummy_node(
+    node: nodes.Module | nodes.ClassDef,
+    name: str,
+    runtime_object: object = _EMPTY_OBJECT_MARKER,
+) -> None:
     """create a dummy node and register it in the locals of the given
     node with the specified name
     """
     _attach_local_node(node, build_dummy(runtime_object), name)
 
 
-def attach_const_node(node, name: str, value) -> None:
+def attach_const_node(
+    node: nodes.Module | nodes.ClassDef, name: str, value: object
+) -> None:
     """create a Const node and register it in the locals of the given
     node with the specified name
     """
@@ -83,7 +94,9 @@ def attach_const_node(node, name: str, value) -> None:
         _attach_local_node(node, nodes.const_factory(value), name)
 
 
-def attach_import_node(node, modname: str, membername: str) -> None:
+def attach_import_node(
+    node: nodes.Module | nodes.ClassDef, modname: str, membername: str
+) -> None:
     """create a ImportFrom node and register it in the locals of the given
     node with the specified name
     """
@@ -140,10 +153,10 @@ def build_function(
     parent: nodes.NodeNG,
     args: list[str] | None = None,
     posonlyargs: list[str] | None = None,
-    defaults: list[Any] | None = None,
+    defaults: list[object] | None = None,
     doc: str | None = None,
     kwonlyargs: list[str] | None = None,
-    kwonlydefaults: list[Any] | None = None,
+    kwonlydefaults: list[object] | None = None,
 ) -> nodes.FunctionDef:
     """create and initialize an astroid FunctionDef node"""
     # first argument is now a list of decorators
@@ -290,17 +303,17 @@ def object_build_class(
 
 def _get_args_info_from_callable(
     member: _FunctionTypes,
-) -> tuple[list[str], list[str], list[Any], list[str], list[Any]]:
+) -> tuple[list[str], list[str], list[object], list[str], list[object]]:
     """Returns args, posonlyargs, defaults, kwonlyargs.
 
     :note: currently ignores the return annotation.
     """
     signature = inspect.signature(member)
     args: list[str] = []
-    defaults: list[Any] = []
+    defaults: list[object] = []
     posonlyargs: list[str] = []
     kwonlyargs: list[str] = []
-    kwonlydefaults: list[Any] = []
+    kwonlydefaults: list[object] = []
 
     for param_name, param in signature.parameters.items():
         if param.kind == inspect.Parameter.POSITIONAL_ONLY:
@@ -347,7 +360,7 @@ def object_build_function(
 
 
 def object_build_datadescriptor(
-    node: nodes.Module | nodes.ClassDef, member: type
+    node: nodes.Module | nodes.ClassDef, member: object
 ) -> nodes.EmptyNode:
     """create astroid for a living data descriptor object
 
@@ -426,7 +439,7 @@ def _build_from_function(
     return build_dummy(member)
 
 
-def _safe_has_attribute(obj, member: str) -> bool:
+def _safe_has_attribute(obj: object, member: str) -> bool:
     """Required because unexpected RunTimeError can be raised.
 
     See https://github.com/pylint-dev/astroid/issues/1958
@@ -448,7 +461,7 @@ class InspectBuilder:
 
     def __init__(self, manager_instance: AstroidManager) -> None:
         self._manager = manager_instance
-        self._done: dict[types.ModuleType | type, nodes.Module | nodes.ClassDef] = {}
+        self._done: dict[object, nodes.Module | nodes.ClassDef] = {}
         self._module: types.ModuleType
 
     def inspect_build(
@@ -481,12 +494,12 @@ class InspectBuilder:
         self.object_build(node, module)
         return node
 
-    def object_build(
-        self, node: nodes.Module | nodes.ClassDef, obj: types.ModuleType | type
-    ) -> None:
+    def object_build(self, node: nodes.Module | nodes.ClassDef, obj: object) -> None:
         """recursive method which create a partial ast from real objects
         (only function, class, and method are handled)
         """
+        # child is declared as any node, each branch building its own kind
+        # pylint: disable = redefined-variable-type
         if obj in self._done:
             return None
         self._done[obj] = node
@@ -512,7 +525,7 @@ class InspectBuilder:
             if inspect.ismethod(member) and not pypy__class_getitem__:
                 member = member.__func__
             if inspect.isfunction(member):
-                child = _build_from_function(node, member, self._module)
+                child: nodes.NodeNG = _build_from_function(node, member, self._module)
             elif inspect.isbuiltin(member) or pypy__class_getitem__:
                 if self.imported_member(node, member, alias):
                     continue
@@ -528,9 +541,9 @@ class InspectBuilder:
                     # recursion
                     self.object_build(child, member)
             elif inspect.ismethoddescriptor(member):
-                child: nodes.NodeNG = object_build_methoddescriptor(node, member)
+                child = object_build_methoddescriptor(node, member)
             elif inspect.isdatadescriptor(member):
-                child: nodes.NodeNG = object_build_datadescriptor(node, member)
+                child = object_build_datadescriptor(node, member)
             elif isinstance(member, tuple(node_classes.CONST_CLS)):
                 # Special case: __hash__ = None overrides ObjectModel for unhashable types.
                 # See https://docs.python.org/3/reference/datamodel.html#object.__hash__
@@ -544,12 +557,12 @@ class InspectBuilder:
                 # above, e.g. some method descriptors.
                 child = _build_from_function(node, member, self._module)
             elif _safe_has_attribute(member, "__all__"):
-                child: nodes.NodeNG = build_module(alias)
+                child = build_module(alias)
                 # recursion
                 self.object_build(child, member)
             else:
                 # create an empty node so that the name is actually defined
-                child: nodes.NodeNG = build_dummy(member)
+                child = build_dummy(member)
             if child not in node.locals.get(alias, ()):
                 if _would_create_parent_cycle(node, child):
                     # ``child`` was built for another owner and is already an
@@ -563,7 +576,9 @@ class InspectBuilder:
                     node.add_local_node(child, alias)
         return None
 
-    def imported_member(self, node, member, name: str) -> bool:
+    def imported_member(
+        self, node: nodes.Module | nodes.ClassDef, member: object, name: str
+    ) -> bool:
         """verify this is not an imported class or handle it"""
         # /!\ some classes like ExtensionClass doesn't have a __module__
         # attribute ! Also, this may trigger an exception on badly built module
@@ -631,7 +646,7 @@ class InspectBuilder:
 _CONST_PROXY: dict[type, nodes.ClassDef] = {}
 
 
-def _set_proxied(const) -> nodes.ClassDef:
+def _set_proxied(const: nodes.Const) -> nodes.ClassDef:
     # TODO : find a nicer way to handle this situation;
     return _CONST_PROXY[const.value.__class__]
 
@@ -657,12 +672,15 @@ def _astroid_bootstrapping() -> None:
             proxy = astroid_builtin.getattr(cls.__name__)[0]
             assert isinstance(proxy, nodes.ClassDef)
         if cls in (dict, list, set, tuple):
+            # Dict and the containers are instances of their builtin class
+            assert issubclass(node_cls, bases.BaseInstance)
             node_cls._proxied = proxy
         else:
             _CONST_PROXY[cls] = proxy
 
     # Set the builtin module as parent for some builtins.
-    nodes.Const._proxied = property(_set_proxied)
+    # Const proxies the class of its value
+    nodes.Const._proxied = property(_set_proxied)  # type: ignore[assignment]
 
     _GeneratorType = nodes.ClassDef(
         types.GeneratorType.__name__,
@@ -734,7 +752,7 @@ def _astroid_bootstrapping() -> None:
         bases.UnionType._proxied = _UnionTypeType
         builder.object_build(bases.UnionType._proxied, types.UnionType)
 
-    builtin_types = (
+    builtin_types: tuple[type, ...] = (
         types.GetSetDescriptorType,
         types.GeneratorType,
         types.MemberDescriptorType,
@@ -747,9 +765,12 @@ def _astroid_bootstrapping() -> None:
         types.TracebackType,
     )
     for _type in builtin_types:
-        if _type.__name__ not in astroid_builtin:
+        # typeshed declares __name__ as a property on some of these types,
+        # which pyright then reads on the classes themselves
+        type_name: str = _type.__name__  # pyright: ignore[reportAssignmentType]
+        if type_name not in astroid_builtin:
             klass = nodes.ClassDef(
-                _type.__name__,
+                type_name,
                 lineno=0,
                 col_offset=0,
                 end_lineno=0,
@@ -764,7 +785,7 @@ def _astroid_bootstrapping() -> None:
                 doc_node=nodes.Const(doc) if doc else None,
             )
             builder.object_build(klass, _type)
-            astroid_builtin[_type.__name__] = klass
+            astroid_builtin[type_name] = klass
 
     InspectBuilder.bootstrapped = True
 
