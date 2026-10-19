@@ -2499,7 +2499,9 @@ class Dict(NodeNG, Instance):
                     if inferredkey.value == index.value:
                         return value
 
-        raise AstroidIndexError(index)
+        raise AstroidIndexError(
+            message="Key {index!r} not found", node=self, index=index, context=context
+        )
 
     def bool_value(self, context: InferenceContext | None = None) -> bool:
         """Determine the boolean value of this node.
