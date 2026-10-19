@@ -19,7 +19,7 @@ import unittest.mock
 import pytest
 
 from astroid import Instance, builder, nodes, test_utils, util
-from astroid.const import IS_PYPY
+from astroid.const import IS_PYPY, PY312_PLUS
 from astroid.exceptions import (
     AstroidBuildingError,
     AstroidSyntaxError,
@@ -1042,3 +1042,28 @@ class StubBuildTest(unittest.TestCase):
         assert isinstance(func.body[0], nodes.Expr)
         assert isinstance(func.body[0].value, nodes.Const)
         assert func.body[0].value.value is ...
+
+
+def test_attribute_assignment_on_bound_method() -> None:
+    """Assigning an attribute on a bound method records nothing."""
+    module = builder.parse("""
+    class A:
+        def method(self):
+            pass
+    A().method.x = 1
+    """)
+    method = module["A"]["method"]
+    assert "x" not in method.instance_attrs
+    assert "x" not in method.locals
+
+
+@pytest.mark.skipif(not PY312_PLUS, reason="Requires PEP 695 type parameters")
+def test_attribute_assignment_on_type_parameter() -> None:
+    """A type parameter has no locals: assigning an attribute on it records nothing."""
+    module = builder.parse("""
+    def func[T]():
+        T.x = 1
+    """)
+    type_param = module["func"].type_params[0]
+    assert isinstance(type_param, nodes.TypeVar)
+    assert "x" not in module["func"].locals

@@ -263,25 +263,24 @@ class AstroidBuilder(raw_building.InspectBuilder):
             for inferred in node.expr.infer():
                 if isinstance(inferred, util.UninferableBase):
                     continue
-                try:
-                    # We want a narrow check on the parent type, not all of its subclasses
-                    if type(inferred) in {bases.Instance, objects.ExceptionInstance}:
-                        inferred = inferred._proxied
-                        iattrs = inferred.instance_attrs
-                        if not _can_assign_attr(inferred, node.attrname):
-                            continue
-                    elif isinstance(inferred, bases.Instance):
-                        # Const, Tuple or other containers that inherit from
-                        # `Instance`
+                # We want a narrow check on the parent type, not all of its subclasses
+                if type(inferred) in {bases.Instance, objects.ExceptionInstance}:
+                    inferred = inferred._proxied
+                    iattrs = inferred.instance_attrs
+                    if not _can_assign_attr(inferred, node.attrname):
                         continue
-                    elif isinstance(inferred, (bases.Proxy, util.UninferableBase)):
-                        continue
-                    elif inferred.is_function:
-                        iattrs = inferred.instance_attrs
-                    else:
-                        iattrs = inferred.locals
-                except AttributeError:
-                    # XXX log error
+                elif isinstance(inferred, bases.Instance):
+                    # Const, Tuple or other containers that inherit from
+                    # `Instance`
+                    continue
+                elif isinstance(inferred, (bases.Proxy, util.UninferableBase)):
+                    continue
+                elif isinstance(inferred, nodes.FunctionDef):
+                    iattrs = inferred.instance_attrs
+                elif isinstance(inferred, nodes.LocalsDictNodeNG):
+                    iattrs = inferred.locals
+                else:
+                    # This kind of value has no locals, e.g. a ``TypeVar``.
                     continue
                 values = iattrs.setdefault(node.attrname, [])
                 if node in values:

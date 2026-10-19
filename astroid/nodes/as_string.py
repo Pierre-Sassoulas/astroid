@@ -282,7 +282,7 @@ class AsStringVisitor:
 
     def visit_excepthandler(self, node: nodes.ExceptHandler) -> str:
         n = "except"
-        if isinstance(getattr(node, "parent", None), nodes.TryStar):
+        if isinstance(node.parent, nodes.TryStar):
             n = "except*"
         if node.type:
             if node.name:

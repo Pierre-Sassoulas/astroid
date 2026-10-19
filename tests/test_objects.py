@@ -749,3 +749,14 @@ class SuperTests(unittest.TestCase):
         assert isinstance(next(init_node[1].infer()), bases.BoundMethod)
         assert isinstance(next(init_node[2].infer()), bases.BoundMethod)
         assert isinstance(next(init_node[3].infer()), bases.BoundMethod)
+
+
+def test_super_mro_with_slice_instance() -> None:
+    node = builder.extract_node("""
+    class A:
+        def method(self):
+            super(object, slice(1)) #@
+    """)
+    inferred = next(node.infer())
+    assert isinstance(inferred, Super)
+    assert inferred.super_mro() == []
