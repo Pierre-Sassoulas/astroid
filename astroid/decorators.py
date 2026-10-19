@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING, ParamSpec, Protocol, TypeVar
 from astroid import util
 from astroid.context import InferenceContext
 from astroid.exceptions import InferenceError
-from astroid.typing import InferenceResult
+from astroid.typing import InferenceErrorInfo, InferenceResult
 
 if TYPE_CHECKING:
     from astroid import nodes
@@ -72,7 +72,7 @@ def path_wrapper(
 
 
 def yes_if_nothing_inferred(
-    func: Callable[_P, Generator[InferenceResult]],
+    func: Callable[_P, Generator[InferenceResult, None, InferenceErrorInfo | None]],
 ) -> Callable[_P, Generator[InferenceResult]]:
     def inner(*args: _P.args, **kwargs: _P.kwargs) -> Generator[InferenceResult]:
         generator = func(*args, **kwargs)
@@ -90,7 +90,7 @@ def yes_if_nothing_inferred(
 
 
 def raise_if_nothing_inferred(
-    func: Callable[_P, Generator[InferenceResult]],
+    func: Callable[_P, Generator[InferenceResult, None, InferenceErrorInfo | None]],
 ) -> Callable[_P, Generator[InferenceResult]]:
     def inner(*args: _P.args, **kwargs: _P.kwargs) -> Generator[InferenceResult]:
         generator = func(*args, **kwargs)
