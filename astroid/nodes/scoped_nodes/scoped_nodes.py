@@ -2292,7 +2292,7 @@ class ClassDef(
             if name in astroid.instance_attrs:
                 yield astroid
 
-    def has_base(self, node) -> bool:
+    def has_base(self, node: NodeNG) -> bool:
         """Whether this class directly inherits from the given node.
 
         :param node: The node to check for.

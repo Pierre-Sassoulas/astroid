@@ -144,7 +144,12 @@ class ImportNode(FilterStmtsBaseNode, NoChildrenNode, Statement):
     and the alias that the name is assigned to (if any).
     """
 
-    def _infer_name(self, frame, name):
+    def _infer_name(
+        self, frame: NodeNG | bases.BaseInstance | None, name: str | None
+    ) -> str | None:
+        if name is None:
+            # real_name could not find a None name either
+            return None
         try:
             return self.real_name(name)
         except AttributeInferenceError:

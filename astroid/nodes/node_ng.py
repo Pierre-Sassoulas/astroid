@@ -4,7 +4,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Generator, Iterator
+from collections.abc import Callable, Generator, Iterator, Sequence
 from functools import cached_property
 from functools import singledispatch as _singledispatch
 from typing import (
@@ -37,6 +37,7 @@ from astroid.typing import (
 )
 
 if TYPE_CHECKING:
+    from astroid.bases import BaseInstance
     from astroid.nodes import _base_nodes
 
     FrameType = nodes.FunctionDef | nodes.Module | nodes.ClassDef | nodes.Lambda
@@ -230,7 +231,9 @@ class NodeNG:
 
     def accept(self, visitor: AsStringVisitor) -> str:
         """Visit this node using the given visitor."""
-        func = getattr(visitor, "visit_" + self.__class__.__name__.lower())
+        func: Callable[[NodeNG], str] = getattr(
+            visitor, "visit_" + self.__class__.__name__.lower()
+        )
         return func(self)
 
     def get_children(self) -> Iterator[NodeNG]:
@@ -248,7 +251,7 @@ class NodeNG:
     def last_child(self) -> NodeNG | None:
         """An optimized version of list(get_children())[-1]."""
         for field in self._astroid_fields[::-1]:
-            attr = getattr(self, field)
+            attr: _ChildField = getattr(self, field)
             if not attr:  # None or empty list / tuple
                 continue
             if isinstance(attr, (list, tuple)):
@@ -263,7 +266,7 @@ class NodeNG:
             yield parent
             parent = parent.parent
 
-    def parent_of(self, node) -> bool:
+    def parent_of(self, node: SuccessfulInferenceResult) -> bool:
         """Check if this node is the parent of the given node.
 
         :param node: The node to check if it is the child.
@@ -322,7 +325,7 @@ class NodeNG:
         assert isinstance(parent, nodes.Module)
         return parent
 
-    def child_sequence(self, child):
+    def child_sequence(self, child: NodeNG) -> Sequence[NodeNG]:
         """Search for the sequence that contains this child.
 
         :param child: The child node to search sequences for.
@@ -335,9 +338,9 @@ class NodeNG:
             the given child.
         """
         for field in self._astroid_fields:
-            node_or_sequence = getattr(self, field)
+            node_or_sequence: _ChildField = getattr(self, field)
             if node_or_sequence is child:
-                return [node_or_sequence]
+                return [child]
             # /!\ compiler.ast Nodes have an __iter__ walking over child nodes
             if (
                 isinstance(node_or_sequence, (tuple, list))
@@ -348,7 +351,7 @@ class NodeNG:
         msg = "Could not find %s in %s's children"
         raise AstroidError(msg % (repr(child), repr(self)))
 
-    def locate_child(self, child):
+    def locate_child(self, child: NodeNG) -> tuple[str, NodeNG | Sequence[NodeNG]]:
         """Find the field of this node that contains the given child.
 
         :param child: The child node to search fields for.
@@ -362,7 +365,7 @@ class NodeNG:
             the given child.
         """
         for field in self._astroid_fields:
-            node_or_sequence = getattr(self, field)
+            node_or_sequence: _ChildField = getattr(self, field)
             # /!\ compiler.ast Nodes have an __iter__ walking over child nodes
             if child is node_or_sequence:
                 return field, child
@@ -377,7 +380,7 @@ class NodeNG:
     # FIXME : should we merge child_sequence and locate_child ? locate_child
     # is only used in are_exclusive, child_sequence one time in pylint.
 
-    def next_sibling(self):
+    def next_sibling(self) -> NodeNG | None:
         """The next sibling statement node.
 
         :returns: The next sibling statement node.
@@ -386,7 +389,7 @@ class NodeNG:
         assert self.parent
         return self.parent.next_sibling()
 
-    def previous_sibling(self):
+    def previous_sibling(self) -> NodeNG | None:
         """The previous sibling statement.
 
         :returns: The previous sibling statement node.
@@ -533,7 +536,7 @@ class NodeNG:
     def _assign_nodes_in_scope(self) -> list[nodes.Assign]:
         return []
 
-    def _get_name_nodes(self):
+    def _get_name_nodes(self) -> Iterator[nodes.Name]:
         for child_node in self.get_children():
             yield from child_node._get_name_nodes()
 
@@ -546,7 +549,9 @@ class NodeNG:
     def _get_yield_nodes_skip_lambdas(self) -> Iterator[nodes.Yield]:
         yield from ()
 
-    def _infer_name(self, frame, name) -> str | None:
+    def _infer_name(
+        self, frame: NodeNG | BaseInstance | None, name: str | None
+    ) -> str | None:
         # overridden for ImportFrom, Import, Global, Try, TryStar and Arguments
         pass
 
@@ -559,7 +564,7 @@ class NodeNG:
             "No inference function for {node!r}.", node=self, context=context
         )
 
-    def inferred(self):
+    def inferred(self) -> list[InferenceResult]:
         """Get a list of the inferred values.
 
         .. seealso:: :ref:`inference`
@@ -581,7 +586,7 @@ class NodeNG:
         """
         return self
 
-    def has_base(self, node) -> bool:
+    def has_base(self, node: NodeNG) -> bool:
         """Check if this node inherits from the given type.
 
         :param node: The node defining the base to look for.
@@ -597,7 +602,7 @@ class NodeNG:
         """
         return False
 
-    def eq(self, value) -> bool:
+    def eq(self, value: object) -> bool:
         return False
 
     def as_string(self) -> str:
@@ -606,12 +611,12 @@ class NodeNG:
 
     def repr_tree(
         self,
-        ids=False,
-        include_linenos=False,
-        ast_state=False,
-        indent="   ",
-        max_depth=0,
-        max_width=80,
+        ids: bool = False,
+        include_linenos: bool = False,
+        ast_state: bool = False,
+        indent: str = "   ",
+        max_depth: int = 0,
+        max_width: int = 80,
     ) -> str:
         """Get a string representation of the AST from this node.
 
@@ -646,7 +651,13 @@ class NodeNG:
         import pprint  # pylint: disable=import-outside-toplevel
 
         @_singledispatch
-        def _repr_tree(node, result, done, cur_indent="", depth=1):
+        def _repr_tree(
+            node: object,
+            result: list[str],
+            done: set[NodeNG],
+            cur_indent: str = "",
+            depth: int = 1,
+        ) -> bool:
             """Outputs a representation of a non-tuple/list, non-node that's
             contained within an AST, including strings.
             """
@@ -660,7 +671,13 @@ class NodeNG:
         # pylint: disable=unused-variable,useless-suppression; doesn't understand singledispatch
         @_repr_tree.register(tuple)
         @_repr_tree.register(list)
-        def _repr_seq(node, result, done, cur_indent="", depth=1):
+        def _repr_seq(
+            node: Sequence[object],
+            result: list[str],
+            done: set[NodeNG],
+            cur_indent: str = "",
+            depth: int = 1,
+        ) -> bool:
             """Outputs a representation of a sequence that's contained within an
             AST.
             """
@@ -692,7 +709,13 @@ class NodeNG:
 
         # pylint: disable=unused-variable,useless-suppression; doesn't understand singledispatch
         @_repr_tree.register(NodeNG)
-        def _repr_node(node, result, done, cur_indent="", depth=1):
+        def _repr_node(
+            node: NodeNG,
+            result: list[str],
+            done: set[NodeNG],
+            cur_indent: str = "",
+            depth: int = 1,
+        ) -> bool:
             """Outputs a strings representation of an astroid node."""
             if node in done:
                 result.append(
@@ -710,7 +733,7 @@ class NodeNG:
                 result.append(f"{type(node).__name__}<0x{id(node):x}>(\n")
             else:
                 result.append(f"{type(node).__name__}(")
-            fields = []
+            fields: list[str] = []
             if include_linenos:
                 fields.extend(("lineno", "col_offset"))
             fields.extend(node._other_fields)
@@ -774,3 +797,7 @@ class NodeNG:
     def op_left_associative(self) -> bool:
         # Everything is left associative except `**` and IfExp
         return True
+
+
+if TYPE_CHECKING:
+    _ChildField = NodeNG | list[NodeNG] | tuple[NodeNG, ...] | None

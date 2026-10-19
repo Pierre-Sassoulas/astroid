@@ -557,7 +557,7 @@ class Name(_base_nodes.LookupMixIn, _base_nodes.NoChildrenNode):
             parent=parent,
         )
 
-    def _get_name_nodes(self):
+    def _get_name_nodes(self) -> Iterator[Name]:
         yield self
 
         for child_node in self.get_children():

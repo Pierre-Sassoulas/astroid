@@ -2425,6 +2425,13 @@ def test_infer_container_unpacking_a_non_container() -> None:
         node.inferred()
 
 
+@pytest.mark.parametrize("code", ["import os", "from os import *"])
+def test_import_infer_name_without_name(code: str) -> None:
+    """An import binds no name for a lookup without a name."""
+    node = extract_node(code)
+    assert node._infer_name(None, None) is None
+
+
 def test_infer_argument_sharing_vararg_name() -> None:
     """Inferring such an argument yields ``Uninferable`` rather than crashing."""
     node = extract_node("def f(x, *y, y: tuple[x]): ...")
