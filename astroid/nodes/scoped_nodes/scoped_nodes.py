@@ -534,13 +534,14 @@ class Module(LocalsDictNodeNG):
         except KeyError:
             return default
 
+        if not isinstance(all_values, node_classes.AssignName):
+            # not an assignment node, e.g. ``from mod import __all__``
+            # XXX infer?
+            return default
+
         try:
             explicit = next(all_values.assigned_stmts())
         except (InferenceError, StopIteration):
-            return default
-        except AttributeError:
-            # not an assignment node
-            # XXX infer?
             return default
 
         # Try our best to detect the exported name.
@@ -2579,7 +2580,7 @@ class ClassDef(
 
         def _valid_getattr(node):
             root = node.root()
-            return root.name != "builtins" and getattr(root, "pure_python", None)
+            return root.name != "builtins" and root.pure_python
 
         try:
             return _valid_getattr(self.getattr("__getattr__", context)[0])
@@ -2629,25 +2630,22 @@ class ClassDef(
         new_context = bind_context_to_node(context, self)
         new_context.callcontext = CallContext(args=[index], callee=method)
 
-        try:
-            return next(method.infer_call_result(self, new_context), util.Uninferable)
-        except AttributeError as exc:
+        if not isinstance(method, (bases.Proxy, ClassDef, FunctionDef, Lambda)):
             # Starting with python3.9, builtin types list, dict etc...
             # are subscriptable thanks to __class_getitem___ classmethod.
-            # However in such case the method is bound to an EmptyNode and
-            # EmptyNode doesn't have infer_call_result method yielding to
-            # AttributeError
+            # However in such case the method is bound to an EmptyNode,
+            # which cannot be called.
             if (
                 isinstance(method, node_classes.EmptyNode)
                 and self.pytype() == "builtins.type"
             ):
                 return self
-            # ``__class_getitem__`` may resolve to a non-callable node (e.g. an
-            # ``AssignName`` or an ``Import``), which has no
-            # ``infer_call_result`` method.
-            if not method.callable():
-                raise AstroidTypeError(node=self, context=context) from exc
-            raise
+            # ``__class_getitem__`` may also resolve to a node which cannot be
+            # called, e.g. an ``AssignName`` or an ``Import``.
+            raise AstroidTypeError(node=self, context=context)
+
+        try:
+            return next(method.infer_call_result(self, new_context), util.Uninferable)
         except InferenceError:
             return util.Uninferable
 
@@ -2752,6 +2750,8 @@ class ClassDef(
 
     def _islots(self):
         """Return an iterator with the inferred slots."""
+        from astroid import objects  # pylint: disable=import-outside-toplevel
+
         if "__slots__" not in self.locals:
             return None
         try:
@@ -2761,8 +2761,19 @@ class ClassDef(
             # e.g. an annotation-only ``__slots__: ...`` with no assigned value.
             return None
         for slots in slots_attributes:
-            # check if __slots__ is a valid type
-            if not hasattr(slots, "getattr"):
+            # check if __slots__ is a valid type: only a string or a container
+            # gives values that can be read
+            if not isinstance(
+                slots,
+                (
+                    node_classes.BaseContainer,
+                    node_classes.Const,
+                    node_classes.Dict,
+                    objects.DictItems,
+                    objects.DictKeys,
+                    objects.DictValues,
+                ),
+            ):
                 continue
             for meth in ITER_METHODS:
                 try:
@@ -2779,16 +2790,11 @@ class ClassDef(
                 if slots.value:
                     yield slots
                 continue
-            if not hasattr(slots, "itered"):
-                # we can't obtain the values, maybe a .deque?
-                continue
 
             if isinstance(slots, node_classes.Dict):
                 values = [item[0] for item in slots.items]
             else:
                 values = slots.itered()
-            if isinstance(values, util.UninferableBase):
-                continue
             if not values:
                 # Stop the iteration, because the class
                 # has an empty list of slots.
