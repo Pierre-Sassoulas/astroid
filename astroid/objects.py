@@ -142,7 +142,8 @@ class Super(NodeNG):
     @property
     def name(self) -> str:
         """Get the name of the MRO pointer."""
-        return self.mro_pointer.name
+        # A valid super() points to a class
+        return self.mro_pointer.name  # type: ignore[union-attr, no-any-return]
 
     def qname(self) -> Literal["super"]:
         return "super"
@@ -267,7 +268,8 @@ class DictInstance(bases.Instance):
     that methods such as .values or .items can be properly inferred.
     """
 
-    special_attributes = objectmodel.DictModel()
+    # Dict instances use the dict model, not the generic instance one
+    special_attributes = objectmodel.DictModel()  # type: ignore[assignment]
 
 
 # Custom objects tailored for dictionary views
@@ -383,7 +385,8 @@ class Property(scoped_nodes.FunctionDef):
         )
 
     special_attributes = objectmodel.PropertyModel()
-    type = "property"
+    # A fixed type, where FunctionDef computes it once from the decorators
+    type = "property"  # pyright: ignore[reportAssignmentType]
 
     def pytype(self) -> Literal["builtins.property"]:
         return "builtins.property"

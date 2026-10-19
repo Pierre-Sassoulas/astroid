@@ -275,7 +275,8 @@ def _infer_sequence_elements(
             yield inferred
 
 
-@decorators.yes_if_nothing_inferred
+# mypy cannot solve the decorator's ParamSpec for a TypeVar-typed self
+@decorators.yes_if_nothing_inferred  # type: ignore[arg-type]
 def tl_infer_binary_op(
     self: _TupleListNodeT,
     opnode: nodes.AugAssign | nodes.BinOp,
@@ -451,7 +452,8 @@ def sequence_assigned_stmts(
         ) from exc
 
     assign_path.insert(0, index)
-    return self.parent.assigned_stmts(
+    # The parent of an assignment target is the assigning statement
+    return self.parent.assigned_stmts(  # type: ignore[union-attr, no-any-return]
         node=self, context=context, assign_path=assign_path
     )
 
@@ -462,11 +464,12 @@ def assend_assigned_stmts(
     context: InferenceContext | None = None,
     assign_path: list[int] | None = None,
 ) -> Iterator[InferenceResult]:
-    return self.parent.assigned_stmts(node=self, context=context)
+    # The parent of an assignment target is the assigning statement
+    return self.parent.assigned_stmts(node=self, context=context)  # type: ignore[union-attr, no-any-return]
 
 
 def _arguments_infer_argname(
-    self, name: str | None, context: InferenceContext | None
+    self: nodes.Arguments, name: str | None, context: InferenceContext | None
 ) -> Generator[InferenceResult]:
     # arguments information may be missing, in which case we can't do anything
     # more
@@ -476,6 +479,8 @@ def _arguments_infer_argname(
         yield util.Uninferable
         return
 
+    # The arguments of a function or a lambda, which they were built under
+    assert isinstance(self.parent, (nodes.FunctionDef, nodes.Lambda))
     args = [arg for arg in self.arguments if arg.name not in [self.vararg, self.kwarg]]
     functype = self.parent.type
     # first argument of instance/class method
@@ -484,7 +489,8 @@ def _arguments_infer_argname(
         and getattr(self.arguments[0], "name", None) == name
         and functype != "staticmethod"
     ):
-        cls = self.parent.parent.scope()
+        # A method's function is defined in a class, so it has a parent
+        cls = self.parent.parent.scope()  # type: ignore[union-attr]
         is_metaclass = isinstance(cls, nodes.ClassDef) and cls.type == "metaclass"
         # If this is a metaclass, then the first argument will always
         # be the class, not an instance.
@@ -511,14 +517,18 @@ def _arguments_infer_argname(
             callee = callee._proxied
         if getattr(callee, "name", None) == self.parent.name:
             call_site = arguments.CallSite(context.callcontext, context.extra_context)
-            yield from call_site.infer_argument(self.parent, name, context)
+            # name is only None on an unreachable fallback of arguments_assigned_stmts
+            yield from call_site.infer_argument(self.parent, name, context)  # type: ignore[arg-type]
             return
 
     if name == self.vararg:
         vararg = nodes.const_factory(())
+        # An empty tuple constant is built as a Tuple node
+        assert isinstance(vararg, nodes.Tuple)
         vararg.parent = self
         if not args and self.parent.name == "__init__":
-            cls = self.parent.parent.scope()
+            # A method's function is defined in a class, so it has a parent
+            cls = self.parent.parent.scope()  # type: ignore[union-attr]
             vararg.elts = [cls.instantiate_class()]
         yield vararg
         return
@@ -531,7 +541,8 @@ def _arguments_infer_argname(
     # we can't guess given argument value
     try:
         context = copy_context(context)
-        yield from self.default_value(name).infer(context)
+        # name is only None on an unreachable fallback of arguments_assigned_stmts
+        yield from self.default_value(name).infer(context)  # type: ignore[arg-type]
         yield util.Uninferable
     except NoDefault:
         yield util.Uninferable
@@ -564,7 +575,8 @@ def arguments_assigned_stmts(
         context = copy_context(context)
         context.callcontext = None
         args = arguments.CallSite(callcontext, context=context)
-        return args.infer_argument(self.parent, node_name, context)
+        # node_name is only None on an unreachable fallback (pragma: no cover)
+        return args.infer_argument(self.parent, node_name, context)  # type: ignore[arg-type]
     return _arguments_infer_argname(self, node_name, context)
 
 
@@ -587,7 +599,10 @@ def assign_assigned_stmts(
         yield self.value
         return None
     yield from _resolve_assignment_parts(
-        self.value.infer(context), assign_path, context
+        # Unpacking (an assign path) only happens for assignments with a value
+        self.value.infer(context),  # type: ignore[union-attr]
+        assign_path,
+        context,
     )
 
     return {
@@ -662,7 +677,8 @@ def _unwrap_typing_wrapper(node: nodes.NodeNG) -> nodes.NodeNG:
         if wrapper_qname not in _TYPING_WRAPPERS:
             break
         if wrapper_qname in _ANNOTATED_WRAPPERS and isinstance(node.slice, nodes.Tuple):
-            node = node.slice.elts[0]
+            # The elements of a subscript's tuple in the source are nodes
+            node = node.slice.elts[0]  # type: ignore[assignment]
         else:
             node = node.slice
     return node

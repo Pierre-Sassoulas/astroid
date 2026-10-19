@@ -400,7 +400,10 @@ def _find_statement_by_line(node: nodes.NodeNG, line: int) -> nodes.NodeNG | Non
         return node
 
     for child in node.get_children():
-        result = _find_statement_by_line(child, line)
+        # A parsed tree only holds nodes
+        result = _find_statement_by_line(
+            child, line  # pyright: ignore[reportArgumentType]
+        )
         if result:
             return result
 
