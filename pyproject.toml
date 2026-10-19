@@ -166,6 +166,7 @@ files = [
   "astroid/brain/helpers.py",
   "astroid/builder.py",
   "astroid/const.py",
+  "astroid/constraint.py",
   "astroid/context.py",
   "astroid/decorators.py",
   "astroid/exceptions.py",
@@ -181,6 +182,8 @@ files = [
   "astroid/nodes/node_ng.py",
   "astroid/nodes/scoped_nodes/__init__.py",
   "astroid/nodes/utils.py",
+  "astroid/raw_building.py",
+  "astroid/rebuilder.py",
   "astroid/test_utils.py",
   "astroid/transforms.py",
   "astroid/typing.py",
@@ -218,8 +221,6 @@ include = [ "astroid" ]
 exclude = [
   "astroid/bases.py",
   "astroid/brain/brain_namedtuple_enum.py",
-  "astroid/builder.py",
-  "astroid/constraint.py",
   "astroid/filter_statements.py",
   "astroid/helpers.py",
   "astroid/interpreter/objectmodel.py",
@@ -230,7 +231,6 @@ exclude = [
   "astroid/nodes/scoped_nodes/utils.py",
   "astroid/objects.py",
   "astroid/protocols.py",
-  "astroid/rebuilder.py",
   "astroid/test_utils.py",
 ]
 pythonVersion = "3.11"
