@@ -88,6 +88,12 @@ def _get_bound_node(
     return bound
 
 
+def _object_class() -> nodes.ClassDef:
+    object_class = AstroidManager().builtins_module["object"]
+    assert isinstance(object_class, nodes.ClassDef)
+    return object_class
+
+
 class ObjectModel(Generic[_InstanceT_co]):
     """Special attributes of the nodes or proxies of type ``_InstanceT_co``."""
 
@@ -173,12 +179,13 @@ class ObjectModel(Generic[_InstanceT_co]):
         # to trigger warnings about extra parameters for ``__new__`` methods
         # we don't infer correctly (e.g. ``tp_new`` of C types), just like
         # the ``__init__`` fallback below.
-        node: nodes.FunctionDef = builder.extract_node(
+        node = builder._extract_single_node(
             """def __new__(cls, *args, **kwargs): return cls()"""
         )
+        assert isinstance(node, nodes.FunctionDef)
         # We set the parent as being the ClassDef of 'object' as that
         # triggers correct inference as a call to __new__ in bases.py
-        node.parent = AstroidManager().builtins_module["object"]
+        node.parent = _object_class()
 
         return bases.BoundMethod(proxy=node, bound=_get_bound_node(self))
 
@@ -190,12 +197,13 @@ class ObjectModel(Generic[_InstanceT_co]):
         # The *args and **kwargs are necessary not to trigger warnings about missing
         # or extra parameters for '__init__' methods we don't infer correctly.
         # This BoundMethod is the fallback value for those.
-        node: nodes.FunctionDef = builder.extract_node(
+        node = builder._extract_single_node(
             """def __init__(self, *args, **kwargs): return None"""
         )
+        assert isinstance(node, nodes.FunctionDef)
         # We set the parent as being the ClassDef of 'object' as that
         # is where this method originally comes from
-        node.parent = AstroidManager().builtins_module["object"]
+        node.parent = _object_class()
 
         return bases.BoundMethod(proxy=node, bound=_get_bound_node(self))
 
@@ -755,10 +763,11 @@ class ContextManagerModel(ObjectModel[_InstanceT_co]):
         """
         from astroid import builder  # pylint: disable=import-outside-toplevel
 
-        node: nodes.FunctionDef = builder.extract_node("""def __enter__(self): ...""")
+        node = builder._extract_single_node("""def __enter__(self): ...""")
+        assert isinstance(node, nodes.FunctionDef)
         # We set the parent as being the ClassDef of 'object' as that
         # is where this method originally comes from
-        node.parent = AstroidManager().builtins_module["object"]
+        node.parent = _object_class()
 
         return bases.BoundMethod(proxy=node, bound=_get_bound_node(self))
 
@@ -773,12 +782,13 @@ class ContextManagerModel(ObjectModel[_InstanceT_co]):
         """
         from astroid import builder  # pylint: disable=import-outside-toplevel
 
-        node: nodes.FunctionDef = builder.extract_node(
+        node = builder._extract_single_node(
             """def __exit__(self, exc_type, exc_value, traceback): ..."""
         )
+        assert isinstance(node, nodes.FunctionDef)
         # We set the parent as being the ClassDef of 'object' as that
         # is where this method originally comes from
-        node.parent = AstroidManager().builtins_module["object"]
+        node.parent = _object_class()
 
         return bases.BoundMethod(proxy=node, bound=_get_bound_node(self))
 
