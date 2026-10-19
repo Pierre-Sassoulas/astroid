@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from typing import TYPE_CHECKING, Self, overload
 
 from astroid.exceptions import ParentMissingError
@@ -77,17 +78,17 @@ class LocalsDictNodeNG(_base_nodes.LookupMixIn):
         try:
             stmts = _filter_stmts(node, self.locals[name], self, offset)
         except KeyError:
-            stmts = ()
+            stmts = []
         if stmts:
             return self, stmts
 
         # Handle nested scopes: since class names do not extend to nested
         # scopes (e.g., methods), we find the next enclosing non-class scope
-        pscope = self.parent and self.parent.scope()
+        pscope = self.parent.scope() if self.parent else None
         while pscope is not None:
             if not isinstance(pscope, scoped_nodes.ClassDef):
                 return pscope.scope_lookup(node, name)
-            pscope = pscope.parent and pscope.parent.scope()
+            pscope = pscope.parent.scope() if pscope.parent else None
 
         # self is at the top level of a module, or is enclosed only by ClassDefs
         return builtin_lookup(name)
@@ -145,7 +146,7 @@ class LocalsDictNodeNG(_base_nodes.LookupMixIn):
         """
         return self.locals[item][0]
 
-    def __iter__(self):
+    def __iter__(self) -> Iterator[str]:
         """Iterate over the names of locals defined in this scoped node.
 
         :returns: The names of the defined locals.
@@ -153,7 +154,7 @@ class LocalsDictNodeNG(_base_nodes.LookupMixIn):
         """
         return iter(self.keys())
 
-    def keys(self):
+    def keys(self) -> list[str]:
         """The names of locals defined in this scoped node.
 
         :returns: The names of the defined locals.
@@ -161,7 +162,7 @@ class LocalsDictNodeNG(_base_nodes.LookupMixIn):
         """
         return list(self.locals.keys())
 
-    def values(self):
+    def values(self) -> list[SuccessfulInferenceResult]:
         """The nodes that define the locals in this scoped node.
 
         :returns: The nodes that define locals.
@@ -172,7 +173,7 @@ class LocalsDictNodeNG(_base_nodes.LookupMixIn):
         # probably not worth the headache
         return [self[key] for key in self.keys()]
 
-    def items(self):
+    def items(self) -> list[tuple[str, SuccessfulInferenceResult]]:
         """Get the names of the locals and the node that defines the local.
 
         :returns: The names of locals and their associated node.
@@ -180,7 +181,7 @@ class LocalsDictNodeNG(_base_nodes.LookupMixIn):
         """
         return list(zip(self.keys(), self.values()))
 
-    def __contains__(self, name) -> bool:
+    def __contains__(self, name: object) -> bool:
         """Check if a local is defined in this scope.
 
         :param name: The name of the local to check for.

@@ -43,11 +43,13 @@ from astroid.exceptions import (
     AstroidSyntaxError,
     AstroidTypeError,
     AttributeInferenceError,
+    InferenceError,
     NoDefault,
     StatementMissing,
 )
 from astroid.nodes.node_classes import UNATTACHED_UNKNOWN
 from astroid.nodes.scoped_nodes import SYNTHETIC_ROOT
+from astroid.raw_building import build_function
 from tests.testdata.python3.recursion_error import LONG_CHAINED_METHOD_CALL
 
 from . import resources
@@ -64,6 +66,27 @@ class AsStringTest(resources.SysPathSetup, unittest.TestCase):
         self.assertEqual(build("1, 2, 3").as_string(), "(1, 2, 3)")
         self.assertEqual(build("(1, )").as_string(), "(1, )")
         self.assertEqual(build("1, 2, 3").as_string(), "(1, 2, 3)")
+
+    def test_import_from_without_module_name_as_string(self) -> None:
+        """``modname`` can be None for a relative import built by hand."""
+        node = nodes.ImportFrom(None, [("x", None)], level=1)
+        self.assertEqual(node.as_string(), "from . import x")
+
+    def test_return_single_element_tuple_as_string(self) -> None:
+        node = extract_node("def f():\n    return (1,)  #@\n")
+        self.assertEqual(node.as_string(), "return (1, )")
+
+    def test_return_tuple_as_string(self) -> None:
+        node = extract_node("def f():\n    return 1, 2  #@\n")
+        self.assertEqual(node.as_string(), "return 1, 2")
+
+    def test_super_object_as_string(self) -> None:
+        node = extract_node("""
+        class A:
+            def f(self):
+                super() #@
+        """)
+        self.assertEqual(node.inferred()[0].as_string(), "super()")
 
     def test_func_signature_issue_185(self) -> None:
         code = textwrap.dedent("""
@@ -2372,6 +2395,50 @@ def test_arguments_default_value_positional_shares_vararg_name() -> None:
     """The default of a positional argument shadowed by ``*args`` is still found."""
     node = extract_node("def f(y=1, *y): ...")
     assert node.args.default_value("y").value == 1
+
+
+def test_arguments_data() -> None:
+    node = extract_node(
+        "def f(a: int = 0, /, b=1, *args: str, c: int = 2, **kwargs: bool): ..."
+    )
+    assert node.args._get_arguments_data() == (
+        {"a": ("int", "0"), "b": (None, "1"), "args": ("str", None)},
+        {"c": ("int", "2"), "kwargs": ("bool", None)},
+    )
+
+
+def test_arguments_of_living_function_without_kwonly_defaults() -> None:
+    """A function built without signature details has ``args`` and ``kw_defaults`` None.
+
+    Looking up its defaults used to raise ``TypeError``.
+    """
+    module = nodes.Module("module", pure_python=False, package=False)
+    function = build_function("f", module, kwonlyargs=["x"])
+    assert function.args.args is None
+    assert function.args.kw_defaults is None
+    with pytest.raises(NoDefault):
+        function.args.default_value("x")
+    function = build_function("g", module)
+    assert function.args.args is None
+    assert function.args._get_arguments_data() == ({}, {})
+
+
+def test_infer_container_unpacking_a_non_container() -> None:
+    node = extract_node("(*1, 2)")
+    with pytest.raises(InferenceError):
+        node.inferred()
+
+
+@pytest.mark.parametrize("code", ["import os", "from os import *"])
+def test_import_infer_name_without_name(code: str) -> None:
+    """An import binds no name for a lookup without a name."""
+    node = extract_node(code)
+    assert node._infer_name(None, None) is None
+
+
+def test_child_sequence_of_single_child() -> None:
+    node = extract_node("if x: pass")
+    assert node.child_sequence(node.test) == [node.test]
 
 
 def test_infer_argument_sharing_vararg_name() -> None:

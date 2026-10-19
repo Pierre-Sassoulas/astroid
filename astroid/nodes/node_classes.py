@@ -12,12 +12,12 @@ import itertools
 import operator
 import typing
 import warnings
-from collections.abc import Callable, Generator, Iterable, Iterator, Mapping
+from collections.abc import Callable, Generator, Iterable, Iterator, Mapping, Sequence
 from functools import cached_property
 from typing import TYPE_CHECKING, Any, ClassVar, Literal, Self, Union
 
 from astroid import decorators, protocols, util
-from astroid.bases import Instance, _infer_stmts
+from astroid.bases import BaseInstance, Instance, Proxy, _infer_stmts
 from astroid.const import _EMPTY_OBJECT_MARKER, PY314_PLUS, Context
 from astroid.context import CallContext, InferenceContext, copy_context
 from astroid.exceptions import (
@@ -52,7 +52,7 @@ if TYPE_CHECKING:
     from astroid.nodes.node_ng import FrameType
 
 
-def _is_const(value) -> bool:
+def _is_const(value: object) -> bool:
     return isinstance(value, tuple(CONST_CLS))
 
 
@@ -186,7 +186,9 @@ def are_exclusive(stmt1, stmt2, exceptions: list[str] | None = None) -> bool:
 _SLICE_SENTINEL = object()
 
 
-def _slice_value(index, context: InferenceContext | None = None):
+def _slice_value(
+    index: NodeNG | None, context: InferenceContext | None = None
+) -> object:
     """Get the value of the given slice index."""
 
     if isinstance(index, Const):
@@ -213,7 +215,9 @@ def _slice_value(index, context: InferenceContext | None = None):
     return _SLICE_SENTINEL
 
 
-def _infer_slice(node, context: InferenceContext | None = None):
+def _infer_slice(
+    node: Slice, context: InferenceContext | None = None
+) -> slice[object, object, object]:
     lower = _slice_value(node.lower, context)
     upper = _slice_value(node.upper, context)
     step = _slice_value(node.step, context)
@@ -228,7 +232,12 @@ def _infer_slice(node, context: InferenceContext | None = None):
     )
 
 
-def _container_getitem(instance, elts, index, context: InferenceContext | None = None):
+def _container_getitem(
+    instance: List | Tuple,
+    elts: list[SuccessfulInferenceResult],
+    index: SuccessfulInferenceResult,
+    context: InferenceContext | None = None,
+) -> SuccessfulInferenceResult:
     """Get a slice or an item, using the given *index*, for the given sequence."""
     try:
         if isinstance(index, Slice):
@@ -270,7 +279,7 @@ class BaseContainer(_base_nodes.ParentAssignNode, Instance, metaclass=abc.ABCMet
         self,
         lineno: int | None,
         col_offset: int | None,
-        parent: NodeNG | None,
+        parent: NodeNG | Proxy | None,
         *,
         end_lineno: int | None,
         end_col_offset: int | None,
@@ -329,11 +338,13 @@ class BaseContainer(_base_nodes.ParentAssignNode, Instance, metaclass=abc.ABCMet
         :returns: The name of the type.
         """
 
-    def get_children(self):
+    # Inference puts inferred values, such as Instance proxies, in elts, so the
+    # children of a container are wider than those of NodeNG.get_children.
+    def get_children(self) -> Iterator[SuccessfulInferenceResult]:  # type: ignore[override] # pyright: ignore[reportIncompatibleMethodOverride]
         yield from self.elts
 
     @decorators.raise_if_nothing_inferred
-    def _infer(self, context: InferenceContext | None = None) -> Iterator[Self]:
+    def _infer(self, context: InferenceContext | None = None) -> Generator[Self]:
         has_starred_named_expr = any(
             isinstance(e, (Starred, NamedExpr)) for e in self.elts
         )
@@ -356,7 +367,7 @@ class BaseContainer(_base_nodes.ParentAssignNode, Instance, metaclass=abc.ABCMet
         self, context: InferenceContext | None = None
     ) -> list[SuccessfulInferenceResult]:
         """Infer all values based on BaseContainer.elts."""
-        values = []
+        values: list[SuccessfulInferenceResult] = []
 
         for elt in self.elts:
             if isinstance(elt, Starred):
@@ -367,7 +378,7 @@ class BaseContainer(_base_nodes.ParentAssignNode, Instance, metaclass=abc.ABCMet
                     # TypeVarTuple unpacking (*Ts) represents a variadic
                     # type parameter, not an iterable to expand.
                     values.append(elt)
-                elif not hasattr(starred, "elts"):
+                elif not isinstance(starred, BaseContainer):
                     raise InferenceError(node=self, context=context)
                 else:
                     # TODO: fresh context?
@@ -410,9 +421,9 @@ class AssignName(
     def __init__(
         self,
         name: str,
-        lineno: int,
-        col_offset: int,
-        parent: NodeNG,
+        lineno: int | None,
+        col_offset: int | None,
+        parent: NodeNG | Proxy | None,
         *,
         end_lineno: int | None,
         end_col_offset: int | None,
@@ -497,9 +508,9 @@ class DelName(
     def __init__(
         self,
         name: str,
-        lineno: int,
-        col_offset: int,
-        parent: NodeNG,
+        lineno: int | None,
+        col_offset: int | None,
+        parent: NodeNG | Proxy | None,
         *,
         end_lineno: int | None,
         end_col_offset: int | None,
@@ -537,9 +548,9 @@ class Name(_base_nodes.LookupMixIn, _base_nodes.NoChildrenNode):
     def __init__(
         self,
         name: str,
-        lineno: int,
-        col_offset: int,
-        parent: NodeNG,
+        lineno: int | None,
+        col_offset: int | None,
+        parent: NodeNG | Proxy | None,
         *,
         end_lineno: int | None,
         end_col_offset: int | None,
@@ -555,7 +566,7 @@ class Name(_base_nodes.LookupMixIn, _base_nodes.NoChildrenNode):
             parent=parent,
         )
 
-    def _get_name_nodes(self):
+    def _get_name_nodes(self) -> Iterator[Name]:
         yield self
 
         for child_node in self.get_children():
@@ -702,7 +713,7 @@ class Arguments(
         self,
         vararg: str | None,
         kwarg: str | None,
-        parent: NodeNG,
+        parent: NodeNG | Proxy | None,
         vararg_node: AssignName | None = None,
         kwarg_node: AssignName | None = None,
     ) -> None:
@@ -768,7 +779,9 @@ class Arguments(
     See astroid/protocols.py for actual implementation.
     """
 
-    def _infer_name(self, frame, name):
+    def _infer_name(
+        self, frame: NodeNG | BaseInstance | None, name: str | None
+    ) -> str | None:
         if self.parent is frame:
             return name
         return None
@@ -780,10 +793,11 @@ class Arguments(
         Can also return 0 if the line can not be determined.
         """
         lineno = super().fromlineno
+        assert self.parent is not None
         return max(lineno, self.parent.fromlineno or 0)
 
     @cached_property
-    def arguments(self):
+    def arguments(self) -> list[AssignName]:
         """Get all the arguments for this node. This includes:
 
         * Positional only arguments
@@ -868,59 +882,52 @@ class Arguments(
         kw_only: dict[str, tuple[str | None, str | None]] = {}
 
         # Setup and match defaults with arguments
-        positional_only_defaults = []
+        args = self.args or []
+        positional_only_defaults: list[NodeNG] = []
         positional_or_keyword_defaults = self.defaults
         if self.defaults:
-            args = self.args or []
             positional_or_keyword_defaults = self.defaults[-len(args) :]
             positional_only_defaults = self.defaults[: len(self.defaults) - len(args)]
 
+        default: str | None
         for index, posonly in enumerate(self.posonlyargs):
-            annotation, default = self.posonlyargs_annotations[index], None
-            if annotation is not None:
-                annotation = annotation.as_string()
+            annotation = _as_string_or_none(self.posonlyargs_annotations[index])
+            default = None
             if positional_only_defaults:
                 default = positional_only_defaults[index].as_string()
             pos_only[posonly.name] = (annotation, default)
 
-        for index, arg in enumerate(self.args):
-            annotation, default = self.annotations[index], None
-            if annotation is not None:
-                annotation = annotation.as_string()
+        for index, arg in enumerate(args):
+            annotation, default = _as_string_or_none(self.annotations[index]), None
             if positional_or_keyword_defaults:
-                defaults_offset = len(self.args) - len(positional_or_keyword_defaults)
+                defaults_offset = len(args) - len(positional_or_keyword_defaults)
                 default_index = index - defaults_offset
-                if (
-                    default_index > -1
-                    and positional_or_keyword_defaults[default_index] is not None
-                ):
-                    default = positional_or_keyword_defaults[default_index].as_string()
+                if default_index > -1:
+                    default = _as_string_or_none(
+                        positional_or_keyword_defaults[default_index]
+                    )
             pos_only[arg.name] = (annotation, default)
 
         if self.vararg:
-            annotation = self.varargannotation
-            if annotation is not None:
-                annotation = annotation.as_string()
+            annotation = _as_string_or_none(self.varargannotation)
             pos_only[self.vararg] = (annotation, None)
 
         for index, kwarg in enumerate(self.kwonlyargs):
-            annotation = self.kwonlyargs_annotations[index]
-            if annotation is not None:
-                annotation = annotation.as_string()
-            default = self.kw_defaults[index]
-            if default is not None:
-                default = default.as_string()
+            annotation = _as_string_or_none(self.kwonlyargs_annotations[index])
+            default = (
+                _as_string_or_none(self.kw_defaults[index])
+                if self.kw_defaults
+                else None
+            )
             kw_only[kwarg.name] = (annotation, default)
 
         if self.kwarg:
-            annotation = self.kwargannotation
-            if annotation is not None:
-                annotation = annotation.as_string()
+            annotation = _as_string_or_none(self.kwargannotation)
             kw_only[self.kwarg] = (annotation, None)
 
         return pos_only, kw_only
 
-    def default_value(self, argname):
+    def default_value(self, argname: str) -> NodeNG:
         """Get the default value for an argument.
 
         :param argname: The name of the argument to get the default value for.
@@ -929,23 +936,27 @@ class Arguments(
         :raises NoDefault: If there is no default value defined for the
             given argument.
         """
+        # ``kw_defaults`` and ``defaults`` are None when they are unknown.
+        kw_defaults = self.kw_defaults or []
         index = _find_arg(argname, self.kwonlyargs)[0]
-        if (index is not None) and (len(self.kw_defaults) > index):
-            if self.kw_defaults[index] is not None:
-                return self.kw_defaults[index]
+        if (index is not None) and (len(kw_defaults) > index):
+            kw_default = kw_defaults[index]
+            if kw_default is not None:
+                return kw_default
             raise NoDefault(func=self.parent, name=argname)
 
         positional = [*(self.posonlyargs or ()), *(self.args or ())]
+        defaults = self.defaults or []
         index = _find_arg(argname, positional)[0]
         if index is not None:
             # ``defaults`` covers the last positional arguments.
-            idx = index - (len(positional) - len(self.defaults))
+            idx = index - (len(positional) - len(defaults))
             if idx >= 0:
-                return self.defaults[idx]
+                return defaults[idx]
 
         raise NoDefault(func=self.parent, name=argname)
 
-    def is_argument(self, name) -> bool:
+    def is_argument(self, name: str) -> bool:
         """Check if the given name is defined in the arguments.
 
         :param name: The name to check for.
@@ -959,7 +970,7 @@ class Arguments(
             return True
         return self.find_argname(name)[1] is not None
 
-    def find_argname(self, argname):
+    def find_argname(self, argname: str) -> tuple[int | None, AssignName | None]:
         """Get the index and :class:`AssignName` node for given name.
 
         :param argname: The name of the argument to search for.
@@ -974,7 +985,7 @@ class Arguments(
                 return index, argument
         return None, None
 
-    def get_children(self):
+    def get_children(self) -> Iterator[NodeNG]:
         yield from self.posonlyargs or ()
 
         for elt in self.posonlyargs_annotations:
@@ -1034,7 +1045,13 @@ class Arguments(
         return _arguments_infer_argname(self, context.lookupname, context)
 
 
-def _find_arg(argname, args):
+def _as_string_or_none(node: NodeNG | None) -> str | None:
+    return None if node is None else node.as_string()
+
+
+def _find_arg(
+    argname: str, args: Sequence[AssignName]
+) -> tuple[int | None, AssignName | None]:
     for i, arg in enumerate(args):
         if arg.name == argname:
             return i, arg
@@ -1042,36 +1059,36 @@ def _find_arg(argname, args):
 
 
 def _format_args(
-    args, defaults=None, annotations=None, skippable_names: set[str] | None = None
+    args: Sequence[AssignName] | None,
+    defaults: Sequence[NodeNG | None] | None = None,
+    annotations: Sequence[NodeNG | None] | None = None,
+    skippable_names: set[str] | None = None,
 ) -> str:
     if skippable_names is None:
         skippable_names = set()
-    values = []
+    values: list[str] = []
     if args is None:
         return ""
     if annotations is None:
         annotations = []
-    if defaults is not None:
-        default_offset = len(args) - len(defaults)
-    else:
-        default_offset = None
+    # Without defaults, the offset is past the last argument.
+    defaults = defaults or []
+    default_offset = len(args) - len(defaults)
     packed = itertools.zip_longest(args, annotations)
     for i, (arg, annotation) in enumerate(packed):
         if arg.name in skippable_names:
             continue
-        if isinstance(arg, Tuple):
-            values.append(f"({_format_args(arg.elts)})")
-        else:
-            argname = arg.name
-            default_sep = "="
-            if annotation is not None:
-                argname += ": " + annotation.as_string()
-                default_sep = " = "
-            values.append(argname)
+        argname = arg.name
+        default_sep = "="
+        if annotation is not None:
+            argname += ": " + annotation.as_string()
+            default_sep = " = "
+        values.append(argname)
 
-            if default_offset is not None and i >= default_offset:
-                if defaults[i - default_offset] is not None:
-                    values[-1] += default_sep + defaults[i - default_offset].as_string()
+        if i >= default_offset:
+            default = defaults[i - default_offset]
+            if default is not None:
+                values[-1] += default_sep + default.as_string()
     return ", ".join(values)
 
 
@@ -1133,9 +1150,9 @@ class AssignAttr(_base_nodes.LookupMixIn, _base_nodes.ParentAssignNode):
     def __init__(
         self,
         attrname: str,
-        lineno: int,
-        col_offset: int,
-        parent: NodeNG,
+        lineno: int | None,
+        col_offset: int | None,
+        parent: NodeNG | Proxy | None,
         *,
         end_lineno: int | None,
         end_col_offset: int | None,
@@ -1159,7 +1176,7 @@ class AssignAttr(_base_nodes.LookupMixIn, _base_nodes.ParentAssignNode):
     See astroid/protocols.py for actual implementation.
     """
 
-    def get_children(self):
+    def get_children(self) -> Iterator[NodeNG]:
         yield self.expr
 
     @decorators.raise_if_nothing_inferred
@@ -1207,7 +1224,7 @@ class Assert(_base_nodes.Statement):
         self.fail = fail
         self.test = test
 
-    def get_children(self):
+    def get_children(self) -> Iterator[NodeNG]:
         yield self.test
 
         if self.fail is not None:
@@ -1253,7 +1270,7 @@ class Assign(_base_nodes.AssignTypeNode, _base_nodes.Statement):
     See astroid/protocols.py for actual implementation.
     """
 
-    def get_children(self):
+    def get_children(self) -> Iterator[NodeNG]:
         yield from self.targets
 
         yield self.value
@@ -1262,10 +1279,10 @@ class Assign(_base_nodes.AssignTypeNode, _base_nodes.Statement):
     def _assign_nodes_in_scope(self) -> list[nodes.Assign]:
         return [self, *self.value._assign_nodes_in_scope]
 
-    def _get_yield_nodes_skip_functions(self):
+    def _get_yield_nodes_skip_functions(self) -> Iterator[nodes.Yield]:
         yield from self.value._get_yield_nodes_skip_functions()
 
-    def _get_yield_nodes_skip_lambdas(self):
+    def _get_yield_nodes_skip_lambdas(self) -> Iterator[nodes.Yield]:
         yield from self.value._get_yield_nodes_skip_lambdas()
 
 
@@ -1312,7 +1329,7 @@ class AnnAssign(_base_nodes.AssignTypeNode, _base_nodes.Statement):
     See astroid/protocols.py for actual implementation.
     """
 
-    def get_children(self):
+    def get_children(self) -> Iterator[NodeNG]:
         yield self.target
         yield self.annotation
 
@@ -1345,9 +1362,9 @@ class AugAssign(
     def __init__(
         self,
         op: str,
-        lineno: int,
-        col_offset: int,
-        parent: NodeNG,
+        lineno: int | None,
+        col_offset: int | None,
+        parent: NodeNG | Proxy | None,
         *,
         end_lineno: int | None,
         end_col_offset: int | None,
@@ -1396,16 +1413,16 @@ class AugAssign(
             return []
         return bad
 
-    def get_children(self):
+    def get_children(self) -> Iterator[NodeNG]:
         yield self.target
         yield self.value
 
-    def _get_yield_nodes_skip_functions(self):
+    def _get_yield_nodes_skip_functions(self) -> Iterator[nodes.Yield]:
         """An AugAssign node can contain a Yield node in the value"""
         yield from self.value._get_yield_nodes_skip_functions()
         yield from super()._get_yield_nodes_skip_functions()
 
-    def _get_yield_nodes_skip_lambdas(self):
+    def _get_yield_nodes_skip_lambdas(self) -> Iterator[nodes.Yield]:
         """An AugAssign node can contain a Yield node in the value"""
         yield from self.value._get_yield_nodes_skip_lambdas()
         yield from super()._get_yield_nodes_skip_lambdas()
@@ -1422,7 +1439,9 @@ class AugAssign(
         rhs_iter = self.value.infer(context=rhs_context)
 
         for lhs, rhs in itertools.product(lhs_iter, rhs_iter):
-            if any(isinstance(value, util.UninferableBase) for value in (rhs, lhs)):
+            if isinstance(rhs, util.UninferableBase) or isinstance(
+                lhs, util.UninferableBase
+            ):
                 # Don't know how to process this.
                 yield util.Uninferable
                 return
@@ -1471,9 +1490,9 @@ class BinOp(_base_nodes.OperatorNode):
     def __init__(
         self,
         op: str,
-        lineno: int,
-        col_offset: int,
-        parent: NodeNG,
+        lineno: int | None,
+        col_offset: int | None,
+        parent: NodeNG | Proxy | None,
         *,
         end_lineno: int | None,
         end_col_offset: int | None,
@@ -1503,7 +1522,7 @@ class BinOp(_base_nodes.OperatorNode):
 
         If any inferred result is uninferable, an empty list is returned.
         """
-        bad = []
+        bad: list[util.BadBinaryOperationMessage] = []
         try:
             for result in self._infer_binop(context=context):
                 if result is util.Uninferable:
@@ -1514,7 +1533,7 @@ class BinOp(_base_nodes.OperatorNode):
             return []
         return bad
 
-    def get_children(self):
+    def get_children(self) -> Iterator[NodeNG]:
         yield self.left
         yield self.right
 
@@ -1527,7 +1546,7 @@ class BinOp(_base_nodes.OperatorNode):
 
     def _infer_binop(
         self, context: InferenceContext | None = None
-    ) -> Generator[InferenceResult]:
+    ) -> Generator[InferenceResult | util.BadBinaryOperationMessage]:
         """Binary operation inference logic."""
         left = self.left
         right = self.right
@@ -1541,7 +1560,9 @@ class BinOp(_base_nodes.OperatorNode):
         lhs_iter = left.infer(context=lhs_context)
         rhs_iter = right.infer(context=rhs_context)
         for lhs, rhs in itertools.product(lhs_iter, rhs_iter):
-            if any(isinstance(value, util.UninferableBase) for value in (rhs, lhs)):
+            if isinstance(rhs, util.UninferableBase) or isinstance(
+                lhs, util.UninferableBase
+            ):
                 # Don't know how to process this.
                 yield util.Uninferable
                 return
@@ -1582,7 +1603,7 @@ class BoolOp(NodeNG):
         op: str,
         lineno: int | None = None,
         col_offset: int | None = None,
-        parent: NodeNG | None = None,
+        parent: NodeNG | Proxy | None = None,
         *,
         end_lineno: int | None = None,
         end_col_offset: int | None = None,
@@ -1624,7 +1645,7 @@ class BoolOp(NodeNG):
         if values is not None:
             self.values = values
 
-    def get_children(self):
+    def get_children(self) -> Iterator[NodeNG]:
         yield from self.values
 
     def op_precedence(self) -> int:
@@ -1674,7 +1695,7 @@ class BoolOp(NodeNG):
             #   0 and 1 -> 0
             #   1 or 0 -> 1
             #   0 or 1 -> 1
-            value = util.Uninferable
+            value: InferenceResult = util.Uninferable
             for value, bool_value in zip(pair, bool_values):
                 if predicate(bool_value):
                     yield value
@@ -1734,7 +1755,7 @@ class Call(NodeNG):
         """The keyword arguments that unpack something."""
         return [keyword for keyword in self.keywords if keyword.arg is None]
 
-    def get_children(self):
+    def get_children(self) -> Iterator[NodeNG]:
         yield self.func
 
         yield from self.args
@@ -1768,9 +1789,11 @@ class Call(NodeNG):
                 continue
         return InferenceErrorInfo(node=self, context=context)
 
-    def _populate_context_lookup(self, context: InferenceContext | None):
+    def _populate_context_lookup(
+        self, context: InferenceContext | None
+    ) -> dict[SuccessfulInferenceResult, InferenceContext]:
         """Allows context to be saved for later for inference inside a function."""
-        context_lookup: dict[InferenceResult, InferenceContext] = {}
+        context_lookup: dict[SuccessfulInferenceResult, InferenceContext] = {}
         if context is None:
             return context_lookup
         for arg in self.args:
@@ -1825,7 +1848,7 @@ class Compare(NodeNG):
         self.left = left
         self.ops = ops
 
-    def get_children(self):
+    def get_children(self) -> Iterator[NodeNG]:
         """Get the child nodes below this node.
 
         Overridden to handle the tuple fields and skip returning the operator
@@ -1838,7 +1861,7 @@ class Compare(NodeNG):
         for _, comparator in self.ops:
             yield comparator  # we don't want the 'op'
 
-    def last_child(self):
+    def last_child(self) -> NodeNG:
         """An optimized version of list(get_children())[-1]
 
         :returns: The last child.
@@ -1927,8 +1950,8 @@ class Compare(NodeNG):
             if retval is not True:
                 break  # short-circuit
             lhs = rhs  # continue
-        if retval is util.Uninferable:
-            yield retval  # type: ignore[misc]
+        if isinstance(retval, util.UninferableBase):
+            yield retval
         else:
             yield Const(retval)
 
@@ -1991,8 +2014,12 @@ class Comprehension(NodeNG):
         return self
 
     def _get_filtered_stmts(
-        self, lookup_node, node, stmts, mystmt: _base_nodes.Statement | None
-    ):
+        self,
+        lookup_node: NodeNG,
+        node: NodeNG,
+        stmts: list[NodeNG],
+        mystmt: NodeNG | None,
+    ) -> tuple[list[NodeNG], bool]:
         """method used in filter_stmts"""
         if self is mystmt:
             if isinstance(lookup_node, (Const, Name)):
@@ -2006,7 +2033,7 @@ class Comprehension(NodeNG):
 
         return stmts, False
 
-    def get_children(self):
+    def get_children(self) -> Iterator[NodeNG]:
         yield self.target
         yield self.iter
 
@@ -2035,7 +2062,7 @@ class Const(_base_nodes.NoChildrenNode, Instance):
         value: Any,
         lineno: int | None = None,
         col_offset: int | None = None,
-        parent: NodeNG = SYNTHETIC_ROOT,
+        parent: NodeNG | Proxy | None = SYNTHETIC_ROOT,
         kind: str | None = None,
         *,
         end_lineno: int | None = None,
@@ -2097,7 +2124,9 @@ class Const(_base_nodes.NoChildrenNode, Instance):
             raise AttributeError
         return super().__getattr__(name)
 
-    def getitem(self, index, context: InferenceContext | None = None):
+    def getitem(
+        self, index: SuccessfulInferenceResult, context: InferenceContext | None = None
+    ) -> Const:
         """Get an item from this node if subscriptable.
 
         :param index: The node to use as a subscript index.
@@ -2168,7 +2197,9 @@ class Const(_base_nodes.NoChildrenNode, Instance):
         """
         return self._proxied.qname()
 
-    def bool_value(self, context: InferenceContext | None = None):
+    def bool_value(
+        self, context: InferenceContext | None = None
+    ) -> bool | util.UninferableBase:
         """Determine the boolean value of this node.
 
         :returns: The boolean value of this node.
@@ -2242,7 +2273,7 @@ class Decorators(NodeNG):
             raise ParentMissingError(target=self.parent)
         return self.parent.parent.frame()
 
-    def get_children(self):
+    def get_children(self) -> Iterator[NodeNG]:
         yield from self.nodes
 
 
@@ -2266,9 +2297,9 @@ class DelAttr(_base_nodes.ParentAssignNode):
     def __init__(
         self,
         attrname: str,
-        lineno: int,
-        col_offset: int,
-        parent: NodeNG,
+        lineno: int | None,
+        col_offset: int | None,
+        parent: NodeNG | Proxy | None,
         *,
         end_lineno: int | None,
         end_col_offset: int | None,
@@ -2287,7 +2318,7 @@ class DelAttr(_base_nodes.ParentAssignNode):
     def postinit(self, expr: NodeNG) -> None:
         self.expr = expr
 
-    def get_children(self):
+    def get_children(self) -> Iterator[NodeNG]:
         yield self.expr
 
 
@@ -2306,9 +2337,9 @@ class Delete(_base_nodes.AssignTypeNode, _base_nodes.Statement):
 
     def __init__(
         self,
-        lineno: int,
-        col_offset: int,
-        parent: NodeNG,
+        lineno: int | None,
+        col_offset: int | None,
+        parent: NodeNG | Proxy | None,
         *,
         end_lineno: int | None,
         end_col_offset: int | None,
@@ -2327,7 +2358,7 @@ class Delete(_base_nodes.AssignTypeNode, _base_nodes.Statement):
     def postinit(self, targets: list[NodeNG]) -> None:
         self.targets = targets
 
-    def get_children(self):
+    def get_children(self) -> Iterator[NodeNG]:
         yield from self.targets
 
 
@@ -2348,7 +2379,7 @@ class Dict(NodeNG, Instance):
         self,
         lineno: int | None,
         col_offset: int | None,
-        parent: NodeNG | None,
+        parent: NodeNG | Proxy | None,
         *,
         end_lineno: int | None,
         end_col_offset: int | None,
@@ -2380,7 +2411,8 @@ class Dict(NodeNG, Instance):
         """
         return "builtins.dict"
 
-    def get_children(self):
+    # Like BaseContainer.elts, items can hold inferred values.
+    def get_children(self) -> Iterator[InferenceResult]:  # type: ignore[override] # pyright: ignore[reportIncompatibleMethodOverride]
         """Get the key and value nodes below this node.
 
         Children are returned in the order that they are defined in the source
@@ -2393,7 +2425,7 @@ class Dict(NodeNG, Instance):
             yield key
             yield value
 
-    def last_child(self):
+    def last_child(self) -> InferenceResult | None:  # type: ignore[override] # pyright: ignore[reportIncompatibleMethodOverride]
         """An optimized version of list(get_children())[-1]
 
         :returns: The last child, or None if no children exist.
@@ -2444,7 +2476,7 @@ class Dict(NodeNG, Instance):
 
         raise AstroidIndexError(index)
 
-    def bool_value(self, context: InferenceContext | None = None):
+    def bool_value(self, context: InferenceContext | None = None) -> bool:
         """Determine the boolean value of this node.
 
         :returns: The boolean value of this node.
@@ -2510,9 +2542,9 @@ class Dict(NodeNG, Instance):
             else:
                 key = util.safe_infer(name, context=context)
                 safe_value = util.safe_infer(value, context=context)
-                if any(not elem for elem in (key, safe_value)):
+                # bool(Uninferable) is False, so this leaves successful results
+                if not key or not safe_value:
                     raise InferenceError(node=self, context=context)
-                # safe_value is SuccessfulInferenceResult as bool(Uninferable) == False
                 values = self._update_with_replacement(values, {key: safe_value})
         return values
 
@@ -2539,14 +2571,14 @@ class Expr(_base_nodes.Statement):
     def postinit(self, value: NodeNG) -> None:
         self.value = value
 
-    def get_children(self):
+    def get_children(self) -> Iterator[NodeNG]:
         yield self.value
 
-    def _get_yield_nodes_skip_functions(self):
+    def _get_yield_nodes_skip_functions(self) -> Iterator[nodes.Yield]:
         if not self.value.is_function:
             yield from self.value._get_yield_nodes_skip_functions()
 
-    def _get_yield_nodes_skip_lambdas(self):
+    def _get_yield_nodes_skip_lambdas(self) -> Iterator[nodes.Yield]:
         if not self.value.is_lambda:
             yield from self.value._get_yield_nodes_skip_lambdas()
 
@@ -2558,12 +2590,12 @@ class EmptyNode(_base_nodes.NoChildrenNode):
 
     def __init__(
         self,
-        lineno: None = None,
-        col_offset: None = None,
-        parent: NodeNG = SYNTHETIC_ROOT,
+        lineno: int | None = None,
+        col_offset: int | None = None,
+        parent: NodeNG | Proxy | None = SYNTHETIC_ROOT,
         *,
-        end_lineno: None = None,
-        end_col_offset: None = None,
+        end_lineno: int | None = None,
+        end_col_offset: int | None = None,
     ) -> None:
         super().__init__(
             lineno=lineno,
@@ -2639,7 +2671,7 @@ class ExceptHandler(
         self.name = name
         self.body = body
 
-    def get_children(self):
+    def get_children(self) -> Iterator[NodeNG]:
         if self.type is not None:
             yield self.type
 
@@ -2649,7 +2681,7 @@ class ExceptHandler(
         yield from self.body
 
     @cached_property
-    def blockstart_tolineno(self):
+    def blockstart_tolineno(self) -> int | None:
         """The line on which the beginning of this block ends.
 
         :type: int
@@ -2728,14 +2760,14 @@ class For(
     """
 
     @cached_property
-    def blockstart_tolineno(self):
+    def blockstart_tolineno(self) -> int:
         """The line on which the beginning of this block ends.
 
         :type: int
         """
         return self.iter.tolineno
 
-    def get_children(self):
+    def get_children(self) -> Iterator[NodeNG]:
         yield self.target
         yield self.iter
 
@@ -2788,7 +2820,7 @@ class Await(NodeNG):
     def postinit(self, value: NodeNG) -> None:
         self.value = value
 
-    def get_children(self):
+    def get_children(self) -> Iterator[NodeNG]:
         yield self.value
 
 
@@ -2810,7 +2842,7 @@ class ImportFrom(_base_nodes.ImportNode):
         level: int | None = 0,
         lineno: int | None = None,
         col_offset: int | None = None,
-        parent: NodeNG | None = None,
+        parent: NodeNG | Proxy | None = None,
         *,
         end_lineno: int | None = None,
         end_col_offset: int | None = None,
@@ -2908,9 +2940,9 @@ class Attribute(NodeNG):
     def __init__(
         self,
         attrname: str,
-        lineno: int,
-        col_offset: int,
-        parent: NodeNG,
+        lineno: int | None,
+        col_offset: int | None,
+        parent: NodeNG | Proxy | None,
         *,
         end_lineno: int | None,
         end_col_offset: int | None,
@@ -2929,7 +2961,7 @@ class Attribute(NodeNG):
     def postinit(self, expr: NodeNG) -> None:
         self.expr = expr
 
-    def get_children(self):
+    def get_children(self) -> Iterator[NodeNG]:
         yield self.expr
 
     @decorators.raise_if_nothing_inferred
@@ -2956,7 +2988,7 @@ class Global(_base_nodes.NoChildrenNode, _base_nodes.Statement):
         names: list[str],
         lineno: int | None = None,
         col_offset: int | None = None,
-        parent: NodeNG | None = None,
+        parent: NodeNG | Proxy | None = None,
         *,
         end_lineno: int | None = None,
         end_col_offset: int | None = None,
@@ -2987,7 +3019,9 @@ class Global(_base_nodes.NoChildrenNode, _base_nodes.Statement):
             parent=parent,
         )
 
-    def _infer_name(self, frame, name):
+    def _infer_name(
+        self, frame: NodeNG | BaseInstance | None, name: str | None
+    ) -> str | None:
         return name
 
     @decorators.raise_if_nothing_inferred
@@ -3033,14 +3067,14 @@ class If(_base_nodes.MultiLineWithElseBlockNode, _base_nodes.Statement):
         self.orelse = orelse
 
     @cached_property
-    def blockstart_tolineno(self):
+    def blockstart_tolineno(self) -> int:
         """The line on which the beginning of this block ends.
 
         :type: int
         """
         return self.test.tolineno
 
-    def get_children(self):
+    def get_children(self) -> Iterator[NodeNG]:
         yield self.test
 
         yield from self.body
@@ -3049,12 +3083,12 @@ class If(_base_nodes.MultiLineWithElseBlockNode, _base_nodes.Statement):
     def has_elif_block(self) -> bool:
         return len(self.orelse) == 1 and isinstance(self.orelse[0], If)
 
-    def _get_yield_nodes_skip_functions(self):
+    def _get_yield_nodes_skip_functions(self) -> Iterator[nodes.Yield]:
         """An If node can contain a Yield node in the test"""
         yield from self.test._get_yield_nodes_skip_functions()
         yield from super()._get_yield_nodes_skip_functions()
 
-    def _get_yield_nodes_skip_lambdas(self):
+    def _get_yield_nodes_skip_lambdas(self) -> Iterator[nodes.Yield]:
         """An If node can contain a Yield node in the test"""
         yield from self.test._get_yield_nodes_skip_lambdas()
         yield from super()._get_yield_nodes_skip_lambdas()
@@ -3084,7 +3118,7 @@ class IfExp(NodeNG):
         self.body = body
         self.orelse = orelse
 
-    def get_children(self):
+    def get_children(self) -> Iterator[NodeNG]:
         yield self.test
         yield self.body
         yield self.orelse
@@ -3153,7 +3187,7 @@ class Import(_base_nodes.ImportNode):
         names: list[tuple[str, str | None]],
         lineno: int | None = None,
         col_offset: int | None = None,
-        parent: NodeNG | None = None,
+        parent: NodeNG | Proxy | None = None,
         *,
         end_lineno: int | None = None,
         end_col_offset: int | None = None,
@@ -3237,7 +3271,7 @@ class Keyword(NodeNG):
         arg: str | None,
         lineno: int | None,
         col_offset: int | None,
-        parent: NodeNG,
+        parent: NodeNG | Proxy | None,
         *,
         end_lineno: int | None,
         end_col_offset: int | None,
@@ -3256,7 +3290,7 @@ class Keyword(NodeNG):
     def postinit(self, value: NodeNG) -> None:
         self.value = value
 
-    def get_children(self):
+    def get_children(self) -> Iterator[NodeNG]:
         yield self.value
 
 
@@ -3276,7 +3310,7 @@ class List(BaseContainer):
         ctx: Context | None = None,
         lineno: int | None = None,
         col_offset: int | None = None,
-        parent: NodeNG | None = None,
+        parent: NodeNG | Proxy | None = None,
         *,
         end_lineno: int | None = None,
         end_col_offset: int | None = None,
@@ -3322,7 +3356,9 @@ class List(BaseContainer):
         """
         return "builtins.list"
 
-    def getitem(self, index, context: InferenceContext | None = None):
+    def getitem(
+        self, index: SuccessfulInferenceResult, context: InferenceContext | None = None
+    ) -> SuccessfulInferenceResult:
         """Get an item from this node.
 
         :param index: The node to use as a subscript index.
@@ -3352,7 +3388,7 @@ class Nonlocal(_base_nodes.NoChildrenNode, _base_nodes.Statement):
         names: list[str],
         lineno: int | None = None,
         col_offset: int | None = None,
-        parent: NodeNG | None = None,
+        parent: NodeNG | Proxy | None = None,
         *,
         end_lineno: int | None = None,
         end_col_offset: int | None = None,
@@ -3383,7 +3419,9 @@ class Nonlocal(_base_nodes.NoChildrenNode, _base_nodes.Statement):
             parent=parent,
         )
 
-    def _infer_name(self, frame, name):
+    def _infer_name(
+        self, frame: NodeNG | BaseInstance | None, name: str | None
+    ) -> str | None:
         return name
 
 
@@ -3402,12 +3440,12 @@ class ParamSpec(_base_nodes.AssignTypeNode):
 
     def __init__(
         self,
-        lineno: int,
-        col_offset: int,
-        parent: NodeNG,
+        lineno: int | None,
+        col_offset: int | None,
+        parent: NodeNG | Proxy | None,
         *,
-        end_lineno: int,
-        end_col_offset: int,
+        end_lineno: int | None,
+        end_col_offset: int | None,
     ) -> None:
         super().__init__(
             lineno=lineno,
@@ -3490,7 +3528,7 @@ class Raise(_base_nodes.Statement):
             name.name == "NotImplementedError" for name in self.exc._get_name_nodes()
         )
 
-    def get_children(self):
+    def get_children(self) -> Iterator[NodeNG]:
         if self.exc is not None:
             yield self.exc
 
@@ -3515,14 +3553,14 @@ class Return(_base_nodes.Statement):
     def postinit(self, value: NodeNG | None) -> None:
         self.value = value
 
-    def get_children(self):
+    def get_children(self) -> Iterator[NodeNG]:
         if self.value is not None:
             yield self.value
 
     def is_tuple_return(self) -> bool:
         return isinstance(self.value, Tuple)
 
-    def _get_return_nodes_skip_functions(self):
+    def _get_return_nodes_skip_functions(self) -> Iterator[nodes.Return]:
         yield self
 
 
@@ -3577,7 +3615,7 @@ class Slice(NodeNG):
         self.upper = upper
         self.step = step
 
-    def _wrap_attribute(self, attr):
+    def _wrap_attribute(self, attr: NodeNG | None) -> NodeNG:
         """Wrap the empty attributes of the Slice in a Const node."""
         if not attr:
             const = const_factory(attr)
@@ -3587,8 +3625,13 @@ class Slice(NodeNG):
 
     @cached_property
     def _proxied(self) -> nodes.ClassDef:
+        # pylint: disable-next=import-outside-toplevel
+        from astroid.nodes import ClassDef
+
         builtins = AstroidManager().builtins_module
-        return builtins.getattr("slice")[0]
+        slice_class = builtins.getattr("slice")[0]
+        assert isinstance(slice_class, ClassDef)
+        return slice_class
 
     def pytype(self) -> Literal["builtins.slice"]:
         """Get the name of the type that this node represents.
@@ -3613,7 +3656,7 @@ class Slice(NodeNG):
 
     def igetattr(
         self, attrname: str, context: InferenceContext | None = None
-    ) -> Iterator[SuccessfulInferenceResult]:
+    ) -> Iterator[InferenceResult]:
         """Infer the possible values of the given attribute on the slice.
 
         :param attrname: The name of the attribute to infer.
@@ -3629,10 +3672,12 @@ class Slice(NodeNG):
         else:
             yield from self.getattr(attrname, context=context)
 
-    def getattr(self, attrname, context: InferenceContext | None = None):
+    def getattr(
+        self, attrname: str, context: InferenceContext | None = None
+    ) -> list[InferenceResult]:
         return self._proxied.getattr(attrname, context)
 
-    def get_children(self):
+    def get_children(self) -> Iterator[NodeNG]:
         if self.lower is not None:
             yield self.lower
 
@@ -3664,9 +3709,9 @@ class Starred(_base_nodes.ParentAssignNode):
     def __init__(
         self,
         ctx: Context,
-        lineno: int,
-        col_offset: int,
-        parent: NodeNG,
+        lineno: int | None,
+        col_offset: int | None,
+        parent: NodeNG | Proxy | None,
         *,
         end_lineno: int | None,
         end_col_offset: int | None,
@@ -3690,7 +3735,7 @@ class Starred(_base_nodes.ParentAssignNode):
     See astroid/protocols.py for actual implementation.
     """
 
-    def get_children(self):
+    def get_children(self) -> Iterator[NodeNG]:
         yield self.value
 
 
@@ -3716,9 +3761,9 @@ class Subscript(NodeNG):
     def __init__(
         self,
         ctx: Context,
-        lineno: int,
-        col_offset: int,
-        parent: NodeNG,
+        lineno: int | None,
+        col_offset: int | None,
+        parent: NodeNG | Proxy | None,
         *,
         end_lineno: int | None,
         end_col_offset: int | None,
@@ -3739,7 +3784,7 @@ class Subscript(NodeNG):
         self.value = value
         self.slice = slice
 
-    def get_children(self):
+    def get_children(self) -> Iterator[NodeNG]:
         yield self.value
         yield self.slice
 
@@ -3804,11 +3849,15 @@ class Subscript(NodeNG):
 
     @decorators.raise_if_nothing_inferred
     @decorators.path_wrapper
-    def _infer(self, context: InferenceContext | None = None):
+    def _infer(
+        self, context: InferenceContext | None = None
+    ) -> Generator[InferenceResult, None, InferenceErrorInfo | None]:
         return self._infer_subscript(context)
 
     @decorators.raise_if_nothing_inferred
-    def infer_lhs(self, context: InferenceContext | None = None):
+    def infer_lhs(
+        self, context: InferenceContext | None = None
+    ) -> Generator[InferenceResult, None, InferenceErrorInfo | None]:
         return self._infer_subscript(context)
 
 
@@ -3834,11 +3883,11 @@ class Try(_base_nodes.MultiLineWithElseBlockNode, _base_nodes.Statement):
     def __init__(
         self,
         *,
-        lineno: int,
-        col_offset: int,
-        end_lineno: int,
-        end_col_offset: int,
-        parent: NodeNG,
+        lineno: int | None,
+        col_offset: int | None,
+        end_lineno: int | None,
+        end_col_offset: int | None,
+        parent: NodeNG | Proxy | None,
     ) -> None:
         """
         :param lineno: The line that this node appears on in the source code.
@@ -3896,7 +3945,9 @@ class Try(_base_nodes.MultiLineWithElseBlockNode, _base_nodes.Statement):
         self.orelse = orelse
         self.finalbody = finalbody
 
-    def _infer_name(self, frame, name):
+    def _infer_name(
+        self, frame: NodeNG | BaseInstance | None, name: str | None
+    ) -> str | None:
         return name
 
     def block_range(self, lineno: int) -> tuple[int, int]:
@@ -3916,7 +3967,7 @@ class Try(_base_nodes.MultiLineWithElseBlockNode, _base_nodes.Statement):
         # handling of block_range for nodes with a potential `else` statement.
         return super().block_range(lineno)
 
-    def get_children(self):
+    def get_children(self) -> Iterator[NodeNG]:
         yield from self.body
         yield from self.handlers
         yield from self.orelse
@@ -3936,7 +3987,7 @@ class TryStar(_base_nodes.MultiLineWithElseBlockNode, _base_nodes.Statement):
         col_offset: int | None = None,
         end_lineno: int | None = None,
         end_col_offset: int | None = None,
-        parent: NodeNG | None = None,
+        parent: NodeNG | Proxy | None = None,
     ) -> None:
         """
         :param lineno: The line that this node appears on in the source code.
@@ -3990,10 +4041,12 @@ class TryStar(_base_nodes.MultiLineWithElseBlockNode, _base_nodes.Statement):
         if finalbody:
             self.finalbody = finalbody
 
-    def _infer_name(self, frame, name):
+    def _infer_name(
+        self, frame: NodeNG | BaseInstance | None, name: str | None
+    ) -> str | None:
         return name
 
-    def get_children(self):
+    def get_children(self) -> Iterator[NodeNG]:
         yield from self.body
         yield from self.handlers
         yield from self.orelse
@@ -4033,7 +4086,7 @@ class Tuple(BaseContainer):
         ctx: Context | None = None,
         lineno: int | None = None,
         col_offset: int | None = None,
-        parent: NodeNG | None = None,
+        parent: NodeNG | Proxy | None = None,
         *,
         end_lineno: int | None = None,
         end_col_offset: int | None = None,
@@ -4079,7 +4132,9 @@ class Tuple(BaseContainer):
         """
         return "builtins.tuple"
 
-    def getitem(self, index, context: InferenceContext | None = None):
+    def getitem(
+        self, index: SuccessfulInferenceResult, context: InferenceContext | None = None
+    ) -> SuccessfulInferenceResult:
         """Get an item from this node.
 
         :param index: The node to use as a subscript index.
@@ -4105,12 +4160,12 @@ class TypeAlias(_base_nodes.AssignTypeNode, _base_nodes.Statement):
 
     def __init__(
         self,
-        lineno: int,
-        col_offset: int,
-        parent: NodeNG,
+        lineno: int | None,
+        col_offset: int | None,
+        parent: NodeNG | Proxy | None,
         *,
-        end_lineno: int,
-        end_col_offset: int,
+        end_lineno: int | None,
+        end_col_offset: int | None,
     ) -> None:
         super().__init__(
             lineno=lineno,
@@ -4156,7 +4211,7 @@ class TypeAlias(_base_nodes.AssignTypeNode, _base_nodes.Statement):
                 InferenceContext | None,
                 None,
             ],
-            Generator[NodeNG],
+            Generator[InferenceResult],
         ]
     ] = protocols.assign_assigned_stmts
 
@@ -4177,12 +4232,12 @@ class TypeVar(_base_nodes.AssignTypeNode):
 
     def __init__(
         self,
-        lineno: int,
-        col_offset: int,
-        parent: NodeNG,
+        lineno: int | None,
+        col_offset: int | None,
+        parent: NodeNG | Proxy | None,
         *,
-        end_lineno: int,
-        end_col_offset: int,
+        end_lineno: int | None,
+        end_col_offset: int | None,
     ) -> None:
         super().__init__(
             lineno=lineno,
@@ -4241,12 +4296,12 @@ class TypeVarTuple(_base_nodes.AssignTypeNode):
 
     def __init__(
         self,
-        lineno: int,
-        col_offset: int,
-        parent: NodeNG,
+        lineno: int | None,
+        col_offset: int | None,
+        parent: NodeNG | Proxy | None,
         *,
-        end_lineno: int,
-        end_col_offset: int,
+        end_lineno: int | None,
+        end_col_offset: int | None,
     ) -> None:
         super().__init__(
             lineno=lineno,
@@ -4313,9 +4368,9 @@ class UnaryOp(_base_nodes.OperatorNode):
     def __init__(
         self,
         op: str,
-        lineno: int,
-        col_offset: int,
-        parent: NodeNG,
+        lineno: int | None,
+        col_offset: int | None,
+        parent: NodeNG | Proxy | None,
         *,
         end_lineno: int | None,
         end_col_offset: int | None,
@@ -4355,7 +4410,7 @@ class UnaryOp(_base_nodes.OperatorNode):
             return []
         return bad
 
-    def get_children(self):
+    def get_children(self) -> Iterator[NodeNG]:
         yield self.operand
 
     def op_precedence(self) -> int:
@@ -4366,9 +4421,7 @@ class UnaryOp(_base_nodes.OperatorNode):
 
     def _infer_unaryop(
         self, context: InferenceContext | None = None
-    ) -> Generator[
-        InferenceResult | util.BadUnaryOperationMessage, None, InferenceErrorInfo
-    ]:
+    ) -> Generator[InferenceResult | util.BadUnaryOperationMessage]:
         """Infer what an UnaryOp should return when evaluated."""
         from astroid.nodes import ClassDef  # pylint: disable=import-outside-toplevel
 
@@ -4475,25 +4528,25 @@ class While(_base_nodes.MultiLineWithElseBlockNode, _base_nodes.Statement):
         self.orelse = orelse
 
     @cached_property
-    def blockstart_tolineno(self):
+    def blockstart_tolineno(self) -> int:
         """The line on which the beginning of this block ends.
 
         :type: int
         """
         return self.test.tolineno
 
-    def get_children(self):
+    def get_children(self) -> Iterator[NodeNG]:
         yield self.test
 
         yield from self.body
         yield from self.orelse
 
-    def _get_yield_nodes_skip_functions(self):
+    def _get_yield_nodes_skip_functions(self) -> Iterator[nodes.Yield]:
         """A While node can contain a Yield node in the test"""
         yield from self.test._get_yield_nodes_skip_functions()
         yield from super()._get_yield_nodes_skip_functions()
 
-    def _get_yield_nodes_skip_lambdas(self):
+    def _get_yield_nodes_skip_lambdas(self) -> Iterator[nodes.Yield]:
         """A While node can contain a Yield node in the test"""
         yield from self.test._get_yield_nodes_skip_lambdas()
         yield from super()._get_yield_nodes_skip_lambdas()
@@ -4523,7 +4576,7 @@ class With(
         self,
         lineno: int | None = None,
         col_offset: int | None = None,
-        parent: NodeNG | None = None,
+        parent: NodeNG | Proxy | None = None,
         *,
         end_lineno: int | None = None,
         end_col_offset: int | None = None,
@@ -4583,14 +4636,14 @@ class With(
     """
 
     @cached_property
-    def blockstart_tolineno(self):
+    def blockstart_tolineno(self) -> int:
         """The line on which the beginning of this block ends.
 
         :type: int
         """
         return self.items[-1][0].tolineno
 
-    def get_children(self):
+    def get_children(self) -> Iterator[NodeNG]:
         """Get the child nodes below this node.
 
         :returns: The children.
@@ -4624,14 +4677,14 @@ class Yield(NodeNG):
     def postinit(self, value: NodeNG | None) -> None:
         self.value = value
 
-    def get_children(self):
+    def get_children(self) -> Iterator[NodeNG]:
         if self.value is not None:
             yield self.value
 
-    def _get_yield_nodes_skip_functions(self):
+    def _get_yield_nodes_skip_functions(self) -> Iterator[nodes.Yield]:
         yield self
 
-    def _get_yield_nodes_skip_lambdas(self):
+    def _get_yield_nodes_skip_lambdas(self) -> Iterator[nodes.Yield]:
         yield self
 
 
@@ -4663,7 +4716,7 @@ class FormattedValue(NodeNG):
         self,
         lineno: int | None = None,
         col_offset: int | None = None,
-        parent: NodeNG | None = None,
+        parent: NodeNG | Proxy | None = None,
         *,
         end_lineno: int | None = None,
         end_col_offset: int | None = None,
@@ -4726,7 +4779,7 @@ class FormattedValue(NodeNG):
         self.conversion = conversion
         self.format_spec = format_spec
 
-    def get_children(self):
+    def get_children(self) -> Iterator[NodeNG]:
         yield self.value
 
         if self.format_spec is not None:
@@ -4734,7 +4787,7 @@ class FormattedValue(NodeNG):
 
     def _infer(
         self, context: InferenceContext | None = None
-    ) -> Generator[InferenceResult, None, InferenceErrorInfo | None]:
+    ) -> Generator[InferenceResult]:
         format_specs = Const("") if self.format_spec is None else self.format_spec
         uninferable_already_generated = False
         for format_spec in format_specs.infer(context):
@@ -4793,7 +4846,7 @@ class JoinedStr(NodeNG):
         self,
         lineno: int | None = None,
         col_offset: int | None = None,
-        parent: NodeNG | None = None,
+        parent: NodeNG | Proxy | None = None,
         *,
         end_lineno: int | None = None,
         end_col_offset: int | None = None,
@@ -4835,12 +4888,12 @@ class JoinedStr(NodeNG):
         if values is not None:
             self.values = values
 
-    def get_children(self):
+    def get_children(self) -> Iterator[NodeNG]:
         yield from self.values
 
     def _infer(
         self, context: InferenceContext | None = None
-    ) -> Generator[InferenceResult, None, InferenceErrorInfo | None]:
+    ) -> Generator[InferenceResult]:
         if self.values:
             yield from self._infer_with_values(context)
         else:
@@ -4848,7 +4901,7 @@ class JoinedStr(NodeNG):
 
     def _infer_with_values(
         self, context: InferenceContext | None = None
-    ) -> Generator[InferenceResult, None, InferenceErrorInfo | None]:
+    ) -> Generator[InferenceResult]:
         uninferable_already_generated = False
         for inferred in self._infer_from_values(self.values, context):
             failed = inferred is util.Uninferable or (
@@ -4864,7 +4917,7 @@ class JoinedStr(NodeNG):
     @classmethod
     def _infer_from_values(
         cls, nodes: list[NodeNG], context: InferenceContext | None = None
-    ) -> Generator[InferenceResult, None, InferenceErrorInfo | None]:
+    ) -> Generator[InferenceResult]:
         if not nodes:
             return
         if len(nodes) == 1:
@@ -4887,7 +4940,7 @@ class JoinedStr(NodeNG):
     @classmethod
     def _safe_infer_from_node(
         cls, node: NodeNG, context: InferenceContext | None = None
-    ) -> Generator[InferenceResult, None, InferenceErrorInfo | None]:
+    ) -> Generator[InferenceResult]:
         try:
             yield from node._infer(context)
         except InferenceError:
@@ -4914,7 +4967,7 @@ class NamedExpr(_base_nodes.AssignTypeNode):
         self,
         lineno: int | None = None,
         col_offset: int | None = None,
-        parent: NodeNG | None = None,
+        parent: NodeNG | Proxy | None = None,
         *,
         end_lineno: int | None = None,
         end_col_offset: int | None = None,
@@ -5024,12 +5077,12 @@ class Unknown(_base_nodes.AssignTypeNode):
 
     def __init__(
         self,
-        parent: NodeNG,
-        lineno: None = None,
-        col_offset: None = None,
+        parent: NodeNG | Proxy | None,
+        lineno: int | None = None,
+        col_offset: int | None = None,
         *,
-        end_lineno: None = None,
-        end_col_offset: None = None,
+        end_lineno: int | None = None,
+        end_col_offset: int | None = None,
     ) -> None:
         super().__init__(
             lineno=lineno,
@@ -5042,7 +5095,9 @@ class Unknown(_base_nodes.AssignTypeNode):
     def qname(self) -> Literal["Unknown"]:
         return "Unknown"
 
-    def _infer(self, context: InferenceContext | None = None):
+    def _infer(
+        self, context: InferenceContext | None = None
+    ) -> Generator[util.UninferableBase]:
         """Inference on an Unknown node immediately terminates."""
         yield util.Uninferable
 
@@ -5080,7 +5135,7 @@ class EvaluatedObject(NodeNG):
 
     def _infer(
         self, context: InferenceContext | None = None
-    ) -> Generator[NodeNG | util.UninferableBase]:
+    ) -> Generator[InferenceResult]:
         yield self.value
 
 
@@ -5109,7 +5164,7 @@ class Match(_base_nodes.Statement, _base_nodes.MultiLineBlockNode):
         self,
         lineno: int | None = None,
         col_offset: int | None = None,
-        parent: NodeNG | None = None,
+        parent: NodeNG | Proxy | None = None,
         *,
         end_lineno: int | None = None,
         end_col_offset: int | None = None,
@@ -5159,7 +5214,7 @@ class MatchCase(_base_nodes.MultiLineBlockNode):
     end_lineno: None
     end_col_offset: None
 
-    def __init__(self, *, parent: NodeNG | None = None) -> None:
+    def __init__(self, *, parent: NodeNG | Proxy | None = None) -> None:
         self.pattern: Pattern
         self.guard: NodeNG | None
         self.body: list[NodeNG]
@@ -5202,7 +5257,7 @@ class MatchValue(Pattern):
         self,
         lineno: int | None = None,
         col_offset: int | None = None,
-        parent: NodeNG | None = None,
+        parent: NodeNG | Proxy | None = None,
         *,
         end_lineno: int | None = None,
         end_col_offset: int | None = None,
@@ -5251,7 +5306,7 @@ class MatchSingleton(Pattern):
         col_offset: int | None = None,
         end_lineno: int | None = None,
         end_col_offset: int | None = None,
-        parent: NodeNG | None = None,
+        parent: NodeNG | Proxy | None = None,
     ) -> None:
         self.value = value
         super().__init__(
@@ -5286,7 +5341,7 @@ class MatchSequence(Pattern):
         self,
         lineno: int | None = None,
         col_offset: int | None = None,
-        parent: NodeNG | None = None,
+        parent: NodeNG | Proxy | None = None,
         *,
         end_lineno: int | None = None,
         end_col_offset: int | None = None,
@@ -5323,7 +5378,7 @@ class MatchMapping(_base_nodes.AssignTypeNode, Pattern):
         self,
         lineno: int | None = None,
         col_offset: int | None = None,
-        parent: NodeNG | None = None,
+        parent: NodeNG | Proxy | None = None,
         *,
         end_lineno: int | None = None,
         end_col_offset: int | None = None,
@@ -5380,7 +5435,7 @@ class MatchClass(Pattern):
         self,
         lineno: int | None = None,
         col_offset: int | None = None,
-        parent: NodeNG | None = None,
+        parent: NodeNG | Proxy | None = None,
         *,
         end_lineno: int | None = None,
         end_col_offset: int | None = None,
@@ -5430,7 +5485,7 @@ class MatchStar(_base_nodes.AssignTypeNode, Pattern):
         self,
         lineno: int | None = None,
         col_offset: int | None = None,
-        parent: NodeNG | None = None,
+        parent: NodeNG | Proxy | None = None,
         *,
         end_lineno: int | None = None,
         end_col_offset: int | None = None,
@@ -5484,7 +5539,7 @@ class MatchAs(_base_nodes.AssignTypeNode, Pattern):
         self,
         lineno: int | None = None,
         col_offset: int | None = None,
-        parent: NodeNG | None = None,
+        parent: NodeNG | Proxy | None = None,
         *,
         end_lineno: int | None = None,
         end_col_offset: int | None = None,
@@ -5533,7 +5588,7 @@ class MatchOr(Pattern):
         self,
         lineno: int | None = None,
         col_offset: int | None = None,
-        parent: NodeNG | None = None,
+        parent: NodeNG | Proxy | None = None,
         *,
         end_lineno: int | None = None,
         end_col_offset: int | None = None,
@@ -5566,7 +5621,7 @@ class TemplateStr(NodeNG):
         self,
         lineno: int | None = None,
         col_offset: int | None = None,
-        parent: NodeNG | None = None,
+        parent: NodeNG | Proxy | None = None,
         *,
         end_lineno: int | None = None,
         end_col_offset: int | None = None,
@@ -5607,7 +5662,7 @@ class Interpolation(NodeNG):
         self,
         lineno: int | None = None,
         col_offset: int | None = None,
-        parent: NodeNG | None = None,
+        parent: NodeNG | Proxy | None = None,
         *,
         end_lineno: int | None = None,
         end_col_offset: int | None = None,
@@ -5682,9 +5737,9 @@ CONST_CLS: dict[type, type[NodeNG]] = {
 
 def _create_basic_elements(
     value: Iterable[Any], node: List | Set | Tuple, building: set[int]
-) -> list[NodeNG]:
+) -> list[SuccessfulInferenceResult]:
     """Create a list of nodes to function as the elements of a new node."""
-    elements: list[NodeNG] = []
+    elements: list[SuccessfulInferenceResult] = []
     for element in value:
         # NOTE: avoid accessing any attributes of element in the loop.
         element_node = _const_factory(element, building)
@@ -5695,9 +5750,9 @@ def _create_basic_elements(
 
 def _create_dict_items(
     values: Mapping[Any, Any], node: Dict, building: set[int]
-) -> list[tuple[SuccessfulInferenceResult, SuccessfulInferenceResult]]:
+) -> list[tuple[InferenceResult, InferenceResult]]:
     """Create a list of node pairs to function as the items of a new dict node."""
-    elements: list[tuple[SuccessfulInferenceResult, SuccessfulInferenceResult]] = []
+    elements: list[tuple[InferenceResult, InferenceResult]] = []
     for key, value in values.items():
         # NOTE: avoid accessing any attributes of both key and value in the loop.
         key_node = _const_factory(key, building)

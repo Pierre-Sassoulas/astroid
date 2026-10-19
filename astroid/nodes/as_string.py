@@ -7,13 +7,13 @@
 from __future__ import annotations
 
 import warnings
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 from typing import TYPE_CHECKING
 
 from astroid import nodes
 
 if TYPE_CHECKING:
-    from astroid import objects
+    from astroid import objects, util
 
 # pylint: disable=unused-argument
 
@@ -55,7 +55,7 @@ class AsStringVisitor:
 
         return "\n" + self.indent + self._docstring(doc_node.value)
 
-    def _stmt_list(self, stmts: list, indent: bool = True) -> str:
+    def _stmt_list(self, stmts: Sequence[nodes.NodeNG], indent: bool = True) -> str:
         """return a list of nodes to string"""
         stmts_str: str = "\n".join(
             nstr for nstr in [n.accept(self) for n in stmts] if nstr
@@ -251,13 +251,13 @@ class AsStringVisitor:
 
     def _visit_dict(self, node: nodes.Dict) -> Iterator[str]:
         for key, value in node.items:
-            key = key.accept(self)
-            value = value.accept(self)
-            if key == "**":
+            key_str = key.accept(self)
+            value_str = value.accept(self)
+            if key_str == "**":
                 # It can only be a DictUnpack node.
-                yield key + value
+                yield key_str + value_str
             else:
-                yield f"{key}: {value}"
+                yield f"{key_str}: {value_str}"
 
     def visit_dictunpack(self, node: nodes.DictUnpack) -> str:
         return "**"
@@ -308,7 +308,9 @@ class AsStringVisitor:
         """return an nodes.ImportFrom node as string"""
         lazy = "lazy " if node.is_lazy else ""
         return "{}from {} import {}".format(
-            lazy, "." * (node.level or 0) + node.modname, _import_string(node.names)
+            lazy,
+            "." * (node.level or 0) + (node.modname or ""),
+            _import_string(node.names),
         )
 
     def visit_joinedstr(self, node: nodes.JoinedStr) -> str:
@@ -323,7 +325,7 @@ class AsStringVisitor:
                 .replace("{", "{{").replace("}", "}}")
                 # Each value in values is either a string literal (Const)
                 # or a FormattedValue
-                if type(value).__name__ == "Const"
+                if isinstance(value, nodes.Const)
                 else value.accept(self)
             )
             for value in node.values
@@ -518,7 +520,7 @@ class AsStringVisitor:
 
     def visit_return(self, node: nodes.Return) -> str:
         """return an nodes.Return node as string"""
-        if node.is_tuple_return() and len(node.value.elts) > 1:
+        if isinstance(node.value, nodes.Tuple) and len(node.value.elts) > 1:
             elts = [child.accept(self) for child in node.value.elts]
             return f"return {', '.join(elts)}"
 
@@ -549,10 +551,8 @@ class AsStringVisitor:
     def visit_subscript(self, node: nodes.Subscript) -> str:
         """return an nodes.Subscript node as string"""
         idx = node.slice
-        if idx.__class__.__name__.lower() == "index":
-            idx = idx.value
         idxstr = idx.accept(self)
-        if idx.__class__.__name__.lower() == "tuple" and idx.elts:
+        if isinstance(idx, nodes.Tuple) and idx.elts:
             # Remove parenthesis in tuple and extended slice.
             # a[(::1, 1:)] is not valid syntax.
             idxstr = idxstr[1:-1]
@@ -633,6 +633,7 @@ class AsStringVisitor:
         """yield an ast.Yield node as string"""
         yi_val = (" " + node.value.accept(self)) if node.value else ""
         expr = "yield" + yi_val
+        assert node.parent
         if node.parent.is_statement:
             return expr
 
@@ -642,6 +643,7 @@ class AsStringVisitor:
         """Return an nodes.YieldFrom node as string."""
         yi_val = (" " + node.value.accept(self)) if node.value else ""
         expr = "yield from" + yi_val
+        assert node.parent
         if node.parent.is_statement:
             return expr
 
@@ -674,8 +676,6 @@ class AsStringVisitor:
 
     def visit_matchsequence(self, node: nodes.MatchSequence) -> str:
         """Return an nodes.MatchSequence node as string."""
-        if node.patterns is None:
-            return "[]"
         return f"[{', '.join(p.accept(self) for p in node.patterns)}]"
 
     def visit_matchmapping(self, node: nodes.MatchMapping) -> str:
@@ -752,12 +752,14 @@ class AsStringVisitor:
     # These aren't for real AST nodes, but for inference objects.
 
     def visit_frozenset(self, node: objects.FrozenSet) -> str:
+        assert node.parent
         return node.parent.accept(self)
 
     def visit_super(self, node: objects.Super) -> str:
+        assert node.parent
         return node.parent.accept(self)
 
-    def visit_uninferable(self, node) -> str:
+    def visit_uninferable(self, node: util.UninferableBase) -> str:
         return str(node)
 
     def visit_property(self, node: objects.Property) -> str:
