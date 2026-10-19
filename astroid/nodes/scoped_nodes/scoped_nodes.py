@@ -1855,7 +1855,7 @@ def get_wrapping_class(node: NodeNG) -> ClassDef | None:
     :rtype: ClassDef or None
     """
 
-    klass = node.frame()
+    klass: FunctionDef | Module | ClassDef | Lambda | None = node.frame()
     while klass is not None and not isinstance(klass, ClassDef):
         if klass.parent is None:
             klass = None
@@ -1987,13 +1987,15 @@ class ClassDef(
     def implicit_parameters(self) -> Literal[1]:
         return 1
 
-    def implicit_locals(self):
+    def implicit_locals(self) -> tuple[tuple[str, NodeNG], ...]:
         """Get implicitly defined class definition locals.
 
         :returns: the the name and Const pair for each local
         :rtype: tuple(tuple(str, node_classes.Const), ...)
         """
-        locals_ = (("__module__", self.special_attributes.attr___module__),)
+        locals_: tuple[tuple[str, NodeNG], ...] = (
+            ("__module__", self.special_attributes.attr___module__),
+        )
         # __qualname__ is defined in PEP3155
         locals_ += (
             ("__qualname__", self.special_attributes.attr___qualname__),
@@ -2112,7 +2114,7 @@ class ClassDef(
         except StopIteration as e:
             raise InferenceError(node=caller.args[1], context=context) from e
         if isinstance(class_bases, (node_classes.Tuple, node_classes.List)):
-            bases = []
+            bases: list[SuccessfulInferenceResult] = []
             for base in class_bases.itered():
                 inferred = next(base.infer(context=context), None)
                 if inferred:
