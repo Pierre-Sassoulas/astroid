@@ -4,7 +4,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Iterator
+from collections.abc import Iterable, Iterator, Sequence
 from typing import Self
 
 from astroid import nodes
@@ -96,7 +96,7 @@ class CallSite:
 
     def _unpack_keywords(
         self,
-        keywords: list[tuple[str | None, nodes.NodeNG]],
+        keywords: Sequence[tuple[str | None, SuccessfulInferenceResult]],
         context: InferenceContext | None = None,
     ) -> dict[str | None, InferenceResult]:
         values: dict[str | None, InferenceResult] = {}
@@ -130,7 +130,9 @@ class CallSite:
         return values
 
     def _unpack_args(
-        self, args: Iterable[nodes.NodeNG], context: InferenceContext | None = None
+        self,
+        args: Iterable[SuccessfulInferenceResult],
+        context: InferenceContext | None = None,
     ) -> list[InferenceResult]:
         values: list[InferenceResult] = []
         context = context or InferenceContext()

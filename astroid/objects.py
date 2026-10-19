@@ -345,7 +345,7 @@ class PartialFunction(scoped_nodes.FunctionDef):
                     context.callcontext.keywords.append((keyword, value))
 
             call_context_args = context.callcontext.args or []
-            context.callcontext.args = self.filled_args + call_context_args
+            context.callcontext.args = [*self.filled_args, *call_context_args]
 
         return super().infer_call_result(caller=caller, context=context)
 
