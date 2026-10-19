@@ -352,7 +352,8 @@ class BaseFunctionModel(ObjectModel[_FunctionT_co]):
             return node_classes.Const(value=None, parent=func)
 
         defaults_obj = node_classes.Tuple(parent=func)
-        defaults_obj.postinit(func.args.defaults)
+        # The tuple shares the list of default nodes of the arguments node.
+        defaults_obj.postinit(func.args.defaults)  # type: ignore[arg-type]
         return defaults_obj
 
     @property
@@ -1006,7 +1007,8 @@ class DictModel(ObjectModel["nodes.Dict"]):
         obj = node_classes.List(parent=self._instance)
         for key, value in self._instance.items:
             elem = node_classes.Tuple(parent=obj)
-            elem.postinit((key, value))
+            # The elements of these item tuples have always been held in a tuple.
+            elem.postinit((key, value))  # type: ignore[arg-type]
             elems.append(elem)
         obj.postinit(elts=elems)
 
@@ -1106,7 +1108,9 @@ class PropertyModel(ObjectModel["Property"]):
             :param func: property for which the setter has to be found
             :return: the setter function or None
             """
-            for node in func.parent.body:
+            # A property is built in the block that defines its getter, or in
+            # the synthetic root module: its parent always has a body.
+            for node in func.parent.body:  # type: ignore[union-attr]
                 if isinstance(node, (nodes.FunctionDef, nodes.AsyncFunctionDef)):
                     for dec_name in node.decoratornames():
                         if dec_name.endswith(func.function.name + ".setter"):
@@ -1129,7 +1133,10 @@ class PropertyModel(ObjectModel["Property"]):
                     raise InferenceError(
                         "fset() needs two arguments", target=self, context=context
                     )
-                yield from func_setter.infer_call_result(caller=caller, context=context)
+                # Not None, checked above: mypy does not narrow it in a nested class.
+                yield from func_setter.infer_call_result(  # type: ignore[union-attr]
+                    caller=caller, context=context
+                )
 
         property_accessor = PropertyFuncAccessor(
             name="fset",
