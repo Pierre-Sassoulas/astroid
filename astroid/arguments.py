@@ -153,7 +153,10 @@ class CallSite:
         return values
 
     def infer_argument(
-        self, funcnode: InferenceResult, name: str, context: InferenceContext
+        self,
+        funcnode: InferenceResult | None,
+        name: str,
+        context: InferenceContext,
     ) -> Iterator[InferenceResult]:  # noqa: C901
         """Infer a function argument value according to the call context."""
         # pylint: disable = too-many-branches

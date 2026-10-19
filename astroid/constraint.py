@@ -346,7 +346,9 @@ def get_constraints(
                 generators = parent.generators
             for comprehension in generators:
                 _add_ifs_constraints(expr, comprehension.ifs, constraints_mapping)
-        current_node = parent
+        # Proxies are only the parents of nodes the object model builds, which
+        # are not between a name and its frame
+        current_node = parent  # type: ignore[assignment]
 
     return constraints_mapping
 

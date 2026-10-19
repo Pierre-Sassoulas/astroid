@@ -683,7 +683,8 @@ class BoundMethod(UnboundMethod):
             end_col_offset=caller.end_col_offset,
         )
         cls.postinit(
-            bases=bases.elts,
+            # type()'s bases tuple holds the inferred base classes
+            bases=bases.elts,  # type: ignore[arg-type]
             body=[empty],
             decorators=None,
             metaclass=mcs,

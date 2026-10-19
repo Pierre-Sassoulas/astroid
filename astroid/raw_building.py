@@ -15,7 +15,7 @@ import os
 import sys
 import types
 import warnings
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from contextlib import redirect_stderr, redirect_stdout
 from typing import TYPE_CHECKING
 
@@ -25,7 +25,7 @@ from astroid.nodes import node_classes
 
 if TYPE_CHECKING:
     from astroid.manager import AstroidManager
-    from astroid.typing import SuccessfulInferenceResult
+    from astroid.typing import InferenceResult, SuccessfulInferenceResult
 
 
 _FunctionTypes = (
@@ -258,7 +258,9 @@ def build_from_import(fromname: str, names: list[str]) -> nodes.ImportFrom:
     return nodes.ImportFrom(fromname, [(name, None) for name in names])
 
 
-def register_arguments(func: nodes.FunctionDef, args: list | None = None) -> None:
+def register_arguments(
+    func: nodes.FunctionDef, args: Sequence[InferenceResult] | None = None
+) -> None:
     """add given arguments to local
 
     args is a list that may contains nested lists
@@ -278,7 +280,8 @@ def register_arguments(func: nodes.FunctionDef, args: list | None = None) -> Non
         if isinstance(arg, nodes.AssignName):
             func.set_local(arg.name, arg)
         else:
-            register_arguments(func, arg.elts)
+            # Python 2 nested argument tuples
+            register_arguments(func, arg.elts)  # type: ignore[union-attr]
 
 
 def _would_create_parent_cycle(node: nodes.NodeNG, child: nodes.NodeNG) -> bool:

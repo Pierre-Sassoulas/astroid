@@ -622,7 +622,11 @@ class TreeRebuilder:
             if arg
         ]:
             newnode.lineno = min(startend[0] for startend in start_end_lineno_pairs)
-            newnode.end_lineno = max(startend[1] for startend in start_end_lineno_pairs)
+            # The parser gives every argument an end position
+            newnode.end_lineno = max(  # type: ignore[type-var]
+                startend[1]  # pyright: ignore[reportArgumentType]
+                for startend in start_end_lineno_pairs
+            )
 
         # save argument names in locals:
         assert newnode.parent
