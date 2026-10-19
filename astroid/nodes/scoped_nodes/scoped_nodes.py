@@ -2425,8 +2425,7 @@ class ClassDef(
         if name in self.special_attributes and class_context and not values:
             special_attr = self.special_attributes.lookup(name)
             if not isinstance(special_attr, node_classes.Unknown):
-                result = [special_attr]
-                return result
+                return [special_attr]
 
         if class_context:
             values += self._metaclass_lookup_attribute(name, context)
@@ -2449,9 +2448,11 @@ class ClassDef(
         return result
 
     @lru_cache(maxsize=1024)  # noqa
-    def _metaclass_lookup_attribute(self, name, context):
+    def _metaclass_lookup_attribute(
+        self, name: str, context: InferenceContext | None
+    ) -> set[InferenceResult]:
         """Search the given name in the implicit and the explicit metaclass."""
-        attrs = set()
+        attrs: set[InferenceResult] = set()
         implicit_meta = self.implicit_metaclass()
         context = copy_context(context)
         metaclass = self.metaclass(context=context)
@@ -2461,7 +2462,9 @@ class ClassDef(
                 attrs.update(cls_attributes)
         return attrs
 
-    def _get_attribute_from_metaclass(self, cls, name, context):
+    def _get_attribute_from_metaclass(
+        self, cls: ClassDef, name: str, context: InferenceContext
+    ) -> Iterator[InferenceResult]:
         from astroid import objects  # pylint: disable=import-outside-toplevel
 
         try:
@@ -2599,9 +2602,9 @@ class ClassDef(
         :returns: Whether the class has a custom __getattr__ or __getattribute__.
         """
 
-        def _valid_getattr(node):
+        def _valid_getattr(node: InferenceResult) -> bool:
             root = node.root()
-            return root.name != "builtins" and getattr(root, "pure_python", None)
+            return root.name != "builtins" and bool(getattr(root, "pure_python", None))
 
         try:
             return _valid_getattr(self.getattr("__getattr__", context)[0])
@@ -2673,13 +2676,13 @@ class ClassDef(
         except InferenceError:
             return util.Uninferable
 
-    def methods(self):
+    def methods(self) -> Iterator[FunctionDef]:
         """Iterate over all of the method defined in this class and its parents.
 
         :returns: The methods defined on the class.
         :rtype: Iterator[FunctionDef]
         """
-        done = {}
+        done: dict[str, None] = {}
         for astroid in itertools.chain(iter((self,)), self.ancestors()):
             for meth in astroid.mymethods():
                 if meth.name in done:
@@ -2687,7 +2690,7 @@ class ClassDef(
                 done[meth.name] = None
                 yield meth
 
-    def mymethods(self):
+    def mymethods(self) -> Iterator[FunctionDef]:
         """Iterate over all of the method defined in this class only.
 
         :returns: The methods defined on the class.
@@ -2697,7 +2700,7 @@ class ClassDef(
             if isinstance(member, FunctionDef):
                 yield member
 
-    def implicit_metaclass(self):
+    def implicit_metaclass(self) -> NodeNG:
         """Get the implicit metaclass of the current class.
 
         This will return an instance of builtins.type.
@@ -2926,9 +2929,10 @@ class ClassDef(
                 # Circular base due to name rebinding (e.g. pdb.Pdb = CustomPdb
                 # where CustomPdb inherits from pdb.Pdb). Fall back to the
                 # first non-circular inferred value from the base expression.
-                baseobj = self._resolve_circular_base(stmt, context)
-                if baseobj is None:
+                resolved = self._resolve_circular_base(stmt, context)
+                if resolved is None:
                     continue
+                baseobj = resolved
             if not baseobj.hide:
                 yield baseobj
             else:
@@ -2936,7 +2940,7 @@ class ClassDef(
 
     def _resolve_circular_base(
         self,
-        stmt: nodes.NodeNG,
+        stmt: SuccessfulInferenceResult,
         context: InferenceContext | None,
     ) -> ClassDef | None:
         """Resolve a circular base reference by finding the original class.
@@ -2959,17 +2963,17 @@ class ClassDef(
 
     def _compute_mro(
         self,
-        context: InferenceContext,
+        context: InferenceContext | None,
         *,
         base_chain: frozenset[ClassDef] = frozenset(),
-    ):
+    ) -> list[ClassDef]:
         if self.qname() == "builtins.object":
             return [self]
 
         inferred_bases = list(
             self._inferred_bases(context=context, base_classes=base_chain)
         )
-        bases_mro = []
+        bases_mro: list[list[ClassDef]] = []
         base_chain |= {self}
         for base in inferred_bases:
             if base in base_chain:
@@ -3013,7 +3017,7 @@ class ClassDef(
         yield from self.body
 
     @cached_property
-    def _assign_nodes_in_scope(self):
+    def _assign_nodes_in_scope(self) -> list[nodes.Assign]:
         children_assign_nodes = (
             child_node._assign_nodes_in_scope for child_node in self.body
         )
