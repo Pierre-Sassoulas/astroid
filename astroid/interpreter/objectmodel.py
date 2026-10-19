@@ -92,10 +92,10 @@ def _get_bound_node(
     return bound
 
 
-def _object_class() -> nodes.ClassDef:
-    object_class = AstroidManager().builtins_module["object"]
-    assert isinstance(object_class, nodes.ClassDef)
-    return object_class
+def _builtins_class(name: str) -> nodes.ClassDef:
+    builtins_class = AstroidManager().builtins_module[name]
+    assert isinstance(builtins_class, nodes.ClassDef)
+    return builtins_class
 
 
 class ObjectModel(Generic[_InstanceT_co]):
@@ -189,7 +189,7 @@ class ObjectModel(Generic[_InstanceT_co]):
         assert isinstance(node, nodes.FunctionDef)
         # We set the parent as being the ClassDef of 'object' as that
         # triggers correct inference as a call to __new__ in bases.py
-        node.parent = _object_class()
+        node.parent = _builtins_class("object")
 
         return bases.BoundMethod(proxy=node, bound=_get_bound_node(self))
 
@@ -207,7 +207,7 @@ class ObjectModel(Generic[_InstanceT_co]):
         assert isinstance(node, nodes.FunctionDef)
         # We set the parent as being the ClassDef of 'object' as that
         # is where this method originally comes from
-        node.parent = _object_class()
+        node.parent = _builtins_class("object")
 
         return bases.BoundMethod(proxy=node, bound=_get_bound_node(self))
 
@@ -253,6 +253,9 @@ class ModuleModel(ObjectModel["nodes.Module"]):
         if not self._instance.package:
             raise AttributeInferenceError(target=self._instance, attribute="__path__")
 
+        # A package always has a path.
+        package_path = self._instance.path
+        assert package_path is not None
         path_objs: list[SuccessfulInferenceResult] = [
             node_classes.Const(
                 value=(
@@ -260,7 +263,7 @@ class ModuleModel(ObjectModel["nodes.Module"]):
                 ),
                 parent=self._instance,
             )
-            for path in self._instance.path
+            for path in package_path
         ]
 
         container = node_classes.List(parent=self._instance)
@@ -383,9 +386,12 @@ class BaseFunctionModel(ObjectModel[_FunctionT_co]):
         annotations: dict[str, nodes.NodeNG] = {
             arg.name: annotation for (arg, annotation) in pair_annotations if annotation
         }
+        # Only a named *args or **kwargs can be annotated.
         if args.varargannotation:
+            assert args.vararg is not None
             annotations[args.vararg] = args.varargannotation
         if args.kwargannotation:
+            assert args.kwarg is not None
             annotations[args.kwarg] = args.kwargannotation
         if returns:
             annotations["return"] = returns
@@ -645,7 +651,10 @@ class ClassModel(ObjectModel["nodes.ClassDef"]):
                 yield other_self.attr___mro__
 
         implicit_metaclass = self._instance.implicit_metaclass()
+        # The implicit metaclass is ``builtins.type``, which defines the method.
+        assert isinstance(implicit_metaclass, nodes.ClassDef)
         mro_method = implicit_metaclass.locals["mro"][0]
+        assert isinstance(mro_method, nodes.FunctionDef)
         return MroBoundMethod(proxy=mro_method, bound=implicit_metaclass)
 
     @property
@@ -693,7 +702,10 @@ class ClassModel(ObjectModel["nodes.ClassDef"]):
                 yield obj
 
         implicit_metaclass = self._instance.implicit_metaclass()
+        # The implicit metaclass is ``builtins.type``, which defines the method.
+        assert isinstance(implicit_metaclass, nodes.ClassDef)
         subclasses_method = implicit_metaclass.locals["__subclasses__"][0]
+        assert isinstance(subclasses_method, nodes.FunctionDef)
         return SubclassesBoundMethod(proxy=subclasses_method, bound=implicit_metaclass)
 
     @property
@@ -774,7 +786,7 @@ class ContextManagerModel(ObjectModel[_InstanceT_co]):
         assert isinstance(node, nodes.FunctionDef)
         # We set the parent as being the ClassDef of 'object' as that
         # is where this method originally comes from
-        node.parent = _object_class()
+        node.parent = _builtins_class("object")
 
         return bases.BoundMethod(proxy=node, bound=_get_bound_node(self))
 
@@ -795,7 +807,7 @@ class ContextManagerModel(ObjectModel[_InstanceT_co]):
         assert isinstance(node, nodes.FunctionDef)
         # We set the parent as being the ClassDef of 'object' as that
         # is where this method originally comes from
-        node.parent = _object_class()
+        node.parent = _builtins_class("object")
 
         return bases.BoundMethod(proxy=node, bound=_get_bound_node(self))
 
@@ -851,12 +863,12 @@ class GeneratorBaseModel(
 
 class GeneratorModel(GeneratorBaseModel):
     def __init__(self) -> None:
-        super().__init__(AstroidManager().builtins_module["generator"])
+        super().__init__(_builtins_class("generator"))
 
 
 class AsyncGeneratorModel(GeneratorBaseModel):
     def __init__(self) -> None:
-        super().__init__(AstroidManager().builtins_module["async_generator"])
+        super().__init__(_builtins_class("async_generator"))
 
 
 class InstanceModel(ObjectModel["bases.Instance"]):
@@ -886,13 +898,11 @@ class ExceptionInstanceModel(InstanceModel):
         # The arguments an exception was created with are not known from the
         # instance alone, so ``args`` is a tuple of unknown contents rather
         # than a known empty tuple.
-        builtins_ast_module = AstroidManager().builtins_module
-        return builtins_ast_module["tuple"].instantiate_class()
+        return _builtins_class("tuple").instantiate_class()
 
     @property
     def attr___traceback__(self) -> bases.Instance:
-        builtins_ast_module = AstroidManager().builtins_module
-        traceback_type = builtins_ast_module[types.TracebackType.__name__]
+        traceback_type = _builtins_class(types.TracebackType.__name__)
         return traceback_type.instantiate_class()
 
 
@@ -965,7 +975,7 @@ BUILTIN_EXCEPTIONS = {
 }
 
 
-class DictModel(ObjectModel["objects.DictInstance"]):
+class DictModel(ObjectModel["nodes.Dict"]):
     @property
     def attr___class__(self) -> InferenceResult:
         return self._instance._proxied
@@ -984,6 +994,8 @@ class DictModel(ObjectModel["objects.DictInstance"]):
                 yield obj
 
         meth = next(self._instance._proxied.igetattr(name), None)
+        # The methods of ``builtins.dict`` are found as unbound methods.
+        assert isinstance(meth, bases.UnboundMethod)
         return DictMethodBoundMethod(proxy=meth, bound=self._instance)
 
     @property
