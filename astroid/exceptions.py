@@ -321,8 +321,8 @@ class AttributeInferenceError(ResolveError):
         attribute: str = "",
         target: nodes.NodeNG | bases.BaseInstance | None = None,
         context: InferenceContext | None = None,
-        mros: list[nodes.ClassDef] | None = None,
-        super_: nodes.ClassDef | None = None,
+        mros: Iterable[Iterable[nodes.ClassDef]] | None = None,
+        super_: objects.Super | None = None,
         cls: nodes.ClassDef | None = None,
         **kws: object,
     ) -> None:
