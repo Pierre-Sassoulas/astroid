@@ -1119,12 +1119,12 @@ class FunctionDef(
 
     :type: NodeNG or None
     """
-    type_comment_args = None
+    type_comment_args: list[NodeNG] | None = None
     """
     If present, this will contain the type annotation for arguments
     passed by a type comment
     """
-    type_comment_returns = None
+    type_comment_returns: NodeNG | None = None
     """If present, this will contain the return type annotation, passed by a type comment"""
     # attributes below are set by the builder module or by raw factories
     _other_fields = ("name", "position")
@@ -1183,9 +1183,9 @@ class FunctionDef(
         args: Arguments,
         body: list[NodeNG],
         decorators: node_classes.Decorators | None = None,
-        returns=None,
-        type_comment_returns=None,
-        type_comment_args=None,
+        returns: NodeNG | None = None,
+        type_comment_returns: NodeNG | None = None,
+        type_comment_args: list[NodeNG] | None = None,
         *,
         position: Position | None = None,
         doc_node: Const | None = None,
@@ -1378,8 +1378,6 @@ class FunctionDef(
                     if not isinstance(inferred, ClassDef):
                         continue
                     for ancestor in inferred.ancestors():
-                        if not isinstance(ancestor, ClassDef):
-                            continue
                         if ancestor.is_subtype_of("builtins.classmethod"):
                             return "classmethod"
                         if ancestor.is_subtype_of("builtins.staticmethod"):
@@ -2030,13 +2028,14 @@ class ClassDef(
         self.type_params = type_params or []
 
     @cached_property
-    def blockstart_tolineno(self):
+    def blockstart_tolineno(self) -> int:
         """The line on which the beginning of this block ends.
 
         :type: int
         """
         if self.bases:
-            return self.bases[-1].tolineno
+            last_base_lineno: int = self.bases[-1].tolineno
+            return last_base_lineno
 
         return self.fromlineno
 
@@ -2572,14 +2571,15 @@ class ClassDef(
                     else:
                         yield util.Uninferable
                 elif isinstance(inferred, objects.Property):
-                    function = inferred.function
+                    property_function = inferred.function
                     if not class_context:
                         if not context.callcontext and not setter:
                             context.callcontext = CallContext(
-                                args=function.args.arguments, callee=function
+                                args=property_function.args.arguments,
+                                callee=property_function,
                             )
                         # Through an instance so we can solve the property
-                        yield from function.infer_call_result(
+                        yield from property_function.infer_call_result(
                             caller=self, context=context
                         )
                     # If we're in a class context, we need to determine if the property
@@ -2587,10 +2587,10 @@ class ClassDef(
                     # the metaclass of all its bases), in which case we can resolve the
                     # property. If not, i.e. the property is defined in some base class
                     # instead, then we return the property object
-                    elif metaclass and function.parent.scope() is metaclass:
+                    elif metaclass and property_function.parent.scope() is metaclass:
                         # Resolve a property as long as it is not accessed through
                         # the class itself.
-                        yield from function.infer_call_result(
+                        yield from property_function.infer_call_result(
                             caller=self, context=context
                         )
                     else:
