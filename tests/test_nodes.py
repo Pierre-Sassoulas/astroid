@@ -67,6 +67,23 @@ class AsStringTest(resources.SysPathSetup, unittest.TestCase):
         self.assertEqual(build("(1, )").as_string(), "(1, )")
         self.assertEqual(build("1, 2, 3").as_string(), "(1, 2, 3)")
 
+    def test_import_from_without_module_name_as_string(self) -> None:
+        """``modname`` can be None for a relative import built by hand."""
+        node = nodes.ImportFrom(None, [("x", None)], level=1)
+        self.assertEqual(node.as_string(), "from . import x")
+
+    def test_return_single_element_tuple_as_string(self) -> None:
+        node = extract_node("def f():\n    return (1,)  #@\n")
+        self.assertEqual(node.as_string(), "return (1, )")
+
+    def test_super_object_as_string(self) -> None:
+        node = extract_node("""
+        class A:
+            def f(self):
+                super() #@
+        """)
+        self.assertEqual(node.inferred()[0].as_string(), "super()")
+
     def test_func_signature_issue_185(self) -> None:
         code = textwrap.dedent("""
         def test(a, b, c=42, *, x=42, **kwargs):
