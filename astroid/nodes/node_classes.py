@@ -329,11 +329,13 @@ class BaseContainer(_base_nodes.ParentAssignNode, Instance, metaclass=abc.ABCMet
         :returns: The name of the type.
         """
 
-    def get_children(self):
+    # Inference puts inferred values, such as Instance proxies, in elts, so the
+    # children of a container are wider than those of NodeNG.get_children.
+    def get_children(self) -> Iterator[SuccessfulInferenceResult]:  # type: ignore[override] # pyright: ignore[reportIncompatibleMethodOverride]
         yield from self.elts
 
     @decorators.raise_if_nothing_inferred
-    def _infer(self, context: InferenceContext | None = None) -> Iterator[Self]:
+    def _infer(self, context: InferenceContext | None = None) -> Generator[Self]:
         has_starred_named_expr = any(
             isinstance(e, (Starred, NamedExpr)) for e in self.elts
         )
@@ -356,7 +358,7 @@ class BaseContainer(_base_nodes.ParentAssignNode, Instance, metaclass=abc.ABCMet
         self, context: InferenceContext | None = None
     ) -> list[SuccessfulInferenceResult]:
         """Infer all values based on BaseContainer.elts."""
-        values = []
+        values: list[SuccessfulInferenceResult] = []
 
         for elt in self.elts:
             if isinstance(elt, Starred):
@@ -367,7 +369,7 @@ class BaseContainer(_base_nodes.ParentAssignNode, Instance, metaclass=abc.ABCMet
                     # TypeVarTuple unpacking (*Ts) represents a variadic
                     # type parameter, not an iterable to expand.
                     values.append(elt)
-                elif not hasattr(starred, "elts"):
+                elif not isinstance(starred, BaseContainer):
                     raise InferenceError(node=self, context=context)
                 else:
                     # TODO: fresh context?
@@ -2386,7 +2388,8 @@ class Dict(NodeNG, Instance):
         """
         return "builtins.dict"
 
-    def get_children(self):
+    # Like BaseContainer.elts, items can hold inferred values.
+    def get_children(self) -> Iterator[InferenceResult]:  # type: ignore[override] # pyright: ignore[reportIncompatibleMethodOverride]
         """Get the key and value nodes below this node.
 
         Children are returned in the order that they are defined in the source
@@ -2399,7 +2402,7 @@ class Dict(NodeNG, Instance):
             yield key
             yield value
 
-    def last_child(self):
+    def last_child(self) -> InferenceResult | None:  # type: ignore[override] # pyright: ignore[reportIncompatibleMethodOverride]
         """An optimized version of list(get_children())[-1]
 
         :returns: The last child, or None if no children exist.
@@ -2516,9 +2519,9 @@ class Dict(NodeNG, Instance):
             else:
                 key = util.safe_infer(name, context=context)
                 safe_value = util.safe_infer(value, context=context)
-                if any(not elem for elem in (key, safe_value)):
+                # bool(Uninferable) is False, so this leaves successful results
+                if not key or not safe_value:
                     raise InferenceError(node=self, context=context)
-                # safe_value is SuccessfulInferenceResult as bool(Uninferable) == False
                 values = self._update_with_replacement(values, {key: safe_value})
         return values
 
@@ -5688,9 +5691,9 @@ CONST_CLS: dict[type, type[NodeNG]] = {
 
 def _create_basic_elements(
     value: Iterable[Any], node: List | Set | Tuple, building: set[int]
-) -> list[NodeNG]:
+) -> list[SuccessfulInferenceResult]:
     """Create a list of nodes to function as the elements of a new node."""
-    elements: list[NodeNG] = []
+    elements: list[SuccessfulInferenceResult] = []
     for element in value:
         # NOTE: avoid accessing any attributes of element in the loop.
         element_node = _const_factory(element, building)
@@ -5701,9 +5704,9 @@ def _create_basic_elements(
 
 def _create_dict_items(
     values: Mapping[Any, Any], node: Dict, building: set[int]
-) -> list[tuple[SuccessfulInferenceResult, SuccessfulInferenceResult]]:
+) -> list[tuple[InferenceResult, InferenceResult]]:
     """Create a list of node pairs to function as the items of a new dict node."""
-    elements: list[tuple[SuccessfulInferenceResult, SuccessfulInferenceResult]] = []
+    elements: list[tuple[InferenceResult, InferenceResult]] = []
     for key, value in values.items():
         # NOTE: avoid accessing any attributes of both key and value in the loop.
         key_node = _const_factory(key, building)

@@ -43,6 +43,7 @@ from astroid.exceptions import (
     AstroidSyntaxError,
     AstroidTypeError,
     AttributeInferenceError,
+    InferenceError,
     NoDefault,
     StatementMissing,
 )
@@ -2399,6 +2400,12 @@ def test_arguments_of_living_function_without_kwonly_defaults() -> None:
     function = build_function("g", module)
     assert function.args.args is None
     assert function.args._get_arguments_data() == ({}, {})
+
+
+def test_infer_container_unpacking_a_non_container() -> None:
+    node = extract_node("(*1, 2)")
+    with pytest.raises(InferenceError):
+        node.inferred()
 
 
 def test_infer_argument_sharing_vararg_name() -> None:
