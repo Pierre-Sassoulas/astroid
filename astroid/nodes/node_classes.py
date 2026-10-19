@@ -1695,7 +1695,7 @@ class BoolOp(NodeNG):
             #   0 and 1 -> 0
             #   1 or 0 -> 1
             #   0 or 1 -> 1
-            value = util.Uninferable
+            value: InferenceResult = util.Uninferable
             for value, bool_value in zip(pair, bool_values):
                 if predicate(bool_value):
                     yield value
@@ -1791,9 +1791,9 @@ class Call(NodeNG):
 
     def _populate_context_lookup(
         self, context: InferenceContext | None
-    ) -> dict[InferenceResult, InferenceContext]:
+    ) -> dict[SuccessfulInferenceResult, InferenceContext]:
         """Allows context to be saved for later for inference inside a function."""
-        context_lookup: dict[InferenceResult, InferenceContext] = {}
+        context_lookup: dict[SuccessfulInferenceResult, InferenceContext] = {}
         if context is None:
             return context_lookup
         for arg in self.args:
@@ -1861,7 +1861,7 @@ class Compare(NodeNG):
         for _, comparator in self.ops:
             yield comparator  # we don't want the 'op'
 
-    def last_child(self):
+    def last_child(self) -> NodeNG:
         """An optimized version of list(get_children())[-1]
 
         :returns: The last child.
@@ -1951,7 +1951,7 @@ class Compare(NodeNG):
                 break  # short-circuit
             lhs = rhs  # continue
         if retval is util.Uninferable:
-            yield retval  # type: ignore[misc]
+            yield retval
         else:
             yield Const(retval)
 
@@ -2195,7 +2195,9 @@ class Const(_base_nodes.NoChildrenNode, Instance):
         """
         return self._proxied.qname()
 
-    def bool_value(self, context: InferenceContext | None = None):
+    def bool_value(
+        self, context: InferenceContext | None = None
+    ) -> bool | util.UninferableBase:
         """Determine the boolean value of this node.
 
         :returns: The boolean value of this node.
@@ -3609,7 +3611,7 @@ class Slice(NodeNG):
         self.upper = upper
         self.step = step
 
-    def _wrap_attribute(self, attr):
+    def _wrap_attribute(self, attr: NodeNG | None) -> NodeNG:
         """Wrap the empty attributes of the Slice in a Const node."""
         if not attr:
             const = const_factory(attr)
@@ -3650,7 +3652,7 @@ class Slice(NodeNG):
 
     def igetattr(
         self, attrname: str, context: InferenceContext | None = None
-    ) -> Iterator[SuccessfulInferenceResult]:
+    ) -> Iterator[InferenceResult]:
         """Infer the possible values of the given attribute on the slice.
 
         :param attrname: The name of the attribute to infer.
@@ -3666,7 +3668,9 @@ class Slice(NodeNG):
         else:
             yield from self.getattr(attrname, context=context)
 
-    def getattr(self, attrname, context: InferenceContext | None = None):
+    def getattr(
+        self, attrname: str, context: InferenceContext | None = None
+    ) -> list[InferenceResult]:
         return self._proxied.getattr(attrname, context)
 
     def get_children(self) -> Iterator[NodeNG]:
@@ -3841,11 +3845,15 @@ class Subscript(NodeNG):
 
     @decorators.raise_if_nothing_inferred
     @decorators.path_wrapper
-    def _infer(self, context: InferenceContext | None = None):
+    def _infer(
+        self, context: InferenceContext | None = None
+    ) -> Generator[InferenceResult, None, InferenceErrorInfo | None]:
         return self._infer_subscript(context)
 
     @decorators.raise_if_nothing_inferred
-    def infer_lhs(self, context: InferenceContext | None = None):
+    def infer_lhs(
+        self, context: InferenceContext | None = None
+    ) -> Generator[InferenceResult, None, InferenceErrorInfo | None]:
         return self._infer_subscript(context)
 
 
@@ -4773,7 +4781,7 @@ class FormattedValue(NodeNG):
 
     def _infer(
         self, context: InferenceContext | None = None
-    ) -> Generator[InferenceResult, None, InferenceErrorInfo | None]:
+    ) -> Generator[InferenceResult]:
         format_specs = Const("") if self.format_spec is None else self.format_spec
         uninferable_already_generated = False
         for format_spec in format_specs.infer(context):
@@ -4879,7 +4887,7 @@ class JoinedStr(NodeNG):
 
     def _infer(
         self, context: InferenceContext | None = None
-    ) -> Generator[InferenceResult, None, InferenceErrorInfo | None]:
+    ) -> Generator[InferenceResult]:
         if self.values:
             yield from self._infer_with_values(context)
         else:
@@ -4887,7 +4895,7 @@ class JoinedStr(NodeNG):
 
     def _infer_with_values(
         self, context: InferenceContext | None = None
-    ) -> Generator[InferenceResult, None, InferenceErrorInfo | None]:
+    ) -> Generator[InferenceResult]:
         uninferable_already_generated = False
         for inferred in self._infer_from_values(self.values, context):
             failed = inferred is util.Uninferable or (
@@ -4903,7 +4911,7 @@ class JoinedStr(NodeNG):
     @classmethod
     def _infer_from_values(
         cls, nodes: list[NodeNG], context: InferenceContext | None = None
-    ) -> Generator[InferenceResult, None, InferenceErrorInfo | None]:
+    ) -> Generator[InferenceResult]:
         if not nodes:
             return
         if len(nodes) == 1:
@@ -4926,7 +4934,7 @@ class JoinedStr(NodeNG):
     @classmethod
     def _safe_infer_from_node(
         cls, node: NodeNG, context: InferenceContext | None = None
-    ) -> Generator[InferenceResult, None, InferenceErrorInfo | None]:
+    ) -> Generator[InferenceResult]:
         try:
             yield from node._infer(context)
         except InferenceError:
@@ -5081,7 +5089,9 @@ class Unknown(_base_nodes.AssignTypeNode):
     def qname(self) -> Literal["Unknown"]:
         return "Unknown"
 
-    def _infer(self, context: InferenceContext | None = None):
+    def _infer(
+        self, context: InferenceContext | None = None
+    ) -> Generator[util.UninferableBase]:
         """Inference on an Unknown node immediately terminates."""
         yield util.Uninferable
 
@@ -5119,7 +5129,7 @@ class EvaluatedObject(NodeNG):
 
     def _infer(
         self, context: InferenceContext | None = None
-    ) -> Generator[NodeNG | util.UninferableBase]:
+    ) -> Generator[InferenceResult]:
         yield self.value
 
 
