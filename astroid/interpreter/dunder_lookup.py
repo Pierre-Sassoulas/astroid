@@ -23,10 +23,12 @@ from astroid import nodes
 from astroid.exceptions import AttributeInferenceError
 
 if TYPE_CHECKING:
+    from astroid import bases
     from astroid.context import InferenceContext
+    from astroid.typing import InferenceResult
 
 
-def _drop_overloads(values: list) -> list:
+def _drop_overloads(values: list[InferenceResult]) -> list[InferenceResult]:
     """Drop ``typing.overload`` stubs when a real implementation is present.
 
     A ``@overload``-decorated definition only declares a signature; the last,
@@ -44,13 +46,15 @@ def _drop_overloads(values: list) -> list:
     return implementations or values
 
 
-def _lookup_in_mro(node, name) -> list:
+def _lookup_in_mro(
+    node: nodes.ClassDef | bases.Instance, name: str
+) -> list[InferenceResult]:
     attrs = node.locals.get(name, [])
 
     nodes_ = itertools.chain.from_iterable(
         ancestor.locals.get(name, []) for ancestor in node.ancestors(recurs=True)
     )
-    values = list(itertools.chain(attrs, nodes_))
+    values: list[InferenceResult] = list(itertools.chain(attrs, nodes_))
     if not values:
         raise AttributeInferenceError(attribute=name, target=node)
 
@@ -59,7 +63,7 @@ def _lookup_in_mro(node, name) -> list:
 
 def lookup(
     node: nodes.NodeNG, name: str, context: InferenceContext | None = None
-) -> list:
+) -> list[InferenceResult]:
     """Lookup the given special method name in the given *node*.
 
     If the special method was found, then a list of attributes
@@ -78,7 +82,7 @@ def lookup(
 
 def _class_lookup(
     node: nodes.ClassDef, name: str, context: InferenceContext | None = None
-) -> list:
+) -> list[InferenceResult]:
     metaclass = node.metaclass(context=context)
     # An explicit metaclass may infer to a non-class node (e.g. a function),
     # which has no MRO to look the special method up in.
@@ -88,8 +92,10 @@ def _class_lookup(
     return _lookup_in_mro(metaclass, name)
 
 
-def _builtin_lookup(node, name) -> list:
-    values = node.locals.get(name, [])
+def _builtin_lookup(
+    node: nodes.List | nodes.Tuple | nodes.Const | nodes.Dict | nodes.Set, name: str
+) -> list[InferenceResult]:
+    values: list[InferenceResult] = node.locals.get(name, [])
     if not values:
         raise AttributeInferenceError(attribute=name, target=node)
 
