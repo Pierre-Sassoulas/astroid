@@ -18,7 +18,6 @@ from astroid.builder import AstroidBuilder, _extract_single_node
 from astroid.context import InferenceContext
 from astroid.exceptions import (
     AstroidError,
-    AstroidTypeError,
     AstroidValueError,
     InferenceError,
     MroError,
@@ -252,8 +251,6 @@ def infer_named_tuple(
 
     try:
         attributes = _check_namedtuple_attributes(name, attributes, rename)
-    except AstroidTypeError as exc:
-        raise UseInferenceDefault("TypeError: " + str(exc)) from exc
     except AstroidValueError as exc:
         raise UseInferenceDefault("ValueError: " + str(exc)) from exc
 
@@ -338,10 +335,6 @@ def _check_namedtuple_attributes(
     # The following snippet is derived from the CPython Lib/collections/__init__.py sources
     # <snippet>
     for name in (typename, *attributes):
-        if not isinstance(name, str):
-            raise AstroidTypeError(
-                f"Type names and field names must be strings, not {type(name)!r}"
-            )
         if not name.isidentifier():
             raise AstroidValueError(
                 "Type names and field names must be valid" + f"identifiers: {name!r}"
