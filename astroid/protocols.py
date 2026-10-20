@@ -689,8 +689,7 @@ def _is_stub_ellipsis_assign(node: nodes.Assign | nodes.AnnAssign) -> bool:
 
 def _is_stub_node(node: nodes.NodeNG) -> bool:
     """Check if a node belongs to a stub module."""
-    root = node.root()
-    return isinstance(root, nodes.Module) and root.is_stub
+    return node.root().is_stub
 
 
 def _unwrap_typing_wrapper(node: nodes.NodeNG) -> nodes.NodeNG:
