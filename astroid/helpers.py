@@ -341,7 +341,9 @@ def object_len(
     )
 
 
-def _higher_function_scope(node: nodes.NodeNG) -> nodes.FunctionDef | None:
+def _higher_function_scope(  # pyright: ignore[reportUnusedFunction]
+    node: nodes.NodeNG,
+) -> nodes.FunctionDef | None:
     """Search for the first function which encloses the given
     scope.
 

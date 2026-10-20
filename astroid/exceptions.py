@@ -341,7 +341,7 @@ class UseInferenceDefault(Exception):
     """
 
 
-class _NonDeducibleTypeHierarchy(Exception):
+class _NonDeducibleTypeHierarchy(Exception):  # pyright: ignore[reportUnusedClass]
     """Raised when is_subtype / is_supertype can't deduce the relation between two
     types.
     """
