@@ -10,6 +10,7 @@ Helps with understanding everything imported from 'gi.repository'
 # pylint:disable=import-error,import-outside-toplevel
 
 import enum
+import importlib
 import inspect
 import itertools
 import re
@@ -59,7 +60,7 @@ def _gi_supports_inspect_signature() -> bool:
     """
     Indicates if pygobject supports inspect.signature().
     """
-    import gi  # pyright: ignore[reportMissingImports]
+    gi = importlib.import_module("gi")
 
     try:
         # inspect.signature() is supported since pygobject==3.51.0 (ee9558e4).
@@ -232,13 +233,9 @@ def _import_gi_module(modname: str) -> nodes.Module:
                         # Just inspecting the code can raise gi deprecation
                         # warnings, so ignore them.
                         try:
-                            from gi import (  # pyright: ignore[reportMissingImports] # pylint:disable=import-error
-                                PyGIDeprecationWarning,
-                                PyGIWarning,
-                            )
-
-                            warnings.simplefilter("ignore", PyGIDeprecationWarning)
-                            warnings.simplefilter("ignore", PyGIWarning)
+                            gi = importlib.import_module("gi")
+                            warnings.simplefilter("ignore", gi.PyGIDeprecationWarning)
+                            warnings.simplefilter("ignore", gi.PyGIWarning)
                         except Exception:  # pylint:disable=broad-except
                             pass
 
@@ -303,7 +300,7 @@ def _looks_like_require_version(node: nodes.Call) -> bool:
 def _register_require_version(node: nodes.Call) -> nodes.Call:
     # Load the gi.require_version locally
     try:
-        import gi  # pyright: ignore[reportMissingImports]
+        gi = importlib.import_module("gi")
 
         name, version = node.args
         # Checked by _looks_like_require_version()
