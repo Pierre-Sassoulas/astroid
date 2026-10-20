@@ -16,7 +16,7 @@ import astroid
 from astroid import builder, extract_node, nodes, protocols
 from astroid.bases import Instance
 from astroid.const import PY312_PLUS
-from astroid.context import InferenceContext
+from astroid.context import CallContext, InferenceContext
 from astroid.exceptions import InferenceError
 from astroid.manager import AstroidManager
 from astroid.util import Uninferable, UninferableBase
@@ -90,6 +90,24 @@ class ProtocolTests(unittest.TestCase):
         """).args
         assigned = list(args.assigned_stmts(node=args.args[0]))
         self.assertEqual(assigned, [Uninferable])
+
+    def test_assigned_stmts_arguments_without_node(self) -> None:
+        # Without an argument name to resolve, nothing is known about the
+        # assigned value. A missing name used to match a missing *args or
+        # **kwargs and yield an empty tuple or dict.
+        func, func_with_vararg = extract_node("""
+        def f(x):  #@
+            return x
+        def g(*args):  #@
+            return args
+        """)
+        self.assertEqual(list(func.args.assigned_stmts()), [Uninferable])
+        self.assertEqual(list(func_with_vararg.args.assigned_stmts()), [Uninferable])
+
+        call = extract_node("f(1) #@")
+        context = InferenceContext()
+        context.callcontext = CallContext(args=call.args, callee=func)
+        self.assertEqual(list(func.args.assigned_stmts(context=context)), [Uninferable])
 
     def test_assigned_stmts_nested_for_tuple(self) -> None:
         assign_stmts = extract_node("""

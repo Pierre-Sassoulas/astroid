@@ -504,7 +504,7 @@ def assend_assigned_stmts(
 
 
 def _arguments_infer_argname(
-    self: nodes.Arguments, name: str | None, context: InferenceContext | None
+    self: nodes.Arguments, name: str, context: InferenceContext | None
 ) -> Generator[InferenceResult]:
     # arguments information may be missing, in which case we can't do anything
     # more
@@ -551,8 +551,7 @@ def _arguments_infer_argname(
             and callee.name == self.parent.name
         ):
             call_site = arguments.CallSite(context.callcontext, context.extra_context)
-            # name is only None on an unreachable fallback of arguments_assigned_stmts
-            yield from call_site.infer_argument(self.parent, name, context)  # type: ignore[arg-type]
+            yield from call_site.infer_argument(self.parent, name, context)
             return
 
     if name == self.vararg:
@@ -575,8 +574,7 @@ def _arguments_infer_argname(
     # we can't guess given argument value
     try:
         context = copy_context(context)
-        # name is only None on an unreachable fallback of arguments_assigned_stmts
-        yield from self.default_value(name).infer(context)  # type: ignore[arg-type]
+        yield from self.default_value(name).infer(context)
         yield util.Uninferable
     except NoDefault:
         yield util.Uninferable
@@ -592,7 +590,10 @@ def arguments_assigned_stmts(
 
     # ``node`` may be missing, see
     # https://github.com/pylint-dev/astroid/pull/1644#discussion_r901545816
-    node_name = node.name if isinstance(node, nodes.AssignName) else None
+    # Without the name of an argument, nothing is known about its value
+    if not isinstance(node, nodes.AssignName):
+        return iter((util.Uninferable,))
+    node_name = node.name
 
     if context and context.callcontext:
         callee = context.callcontext.callee
@@ -601,8 +602,7 @@ def arguments_assigned_stmts(
     else:
         return _arguments_infer_argname(self, node_name, context)
     if (
-        node
-        and isinstance(callee, (nodes.FunctionDef, nodes.Lambda))
+        isinstance(callee, (nodes.FunctionDef, nodes.Lambda))
         and callee.name == node.frame().name
     ):
         # reset call context/name
@@ -610,8 +610,7 @@ def arguments_assigned_stmts(
         context = copy_context(context)
         context.callcontext = None
         args = arguments.CallSite(callcontext, context=context)
-        # node_name is only None on an unreachable fallback (pragma: no cover)
-        return args.infer_argument(self.parent, node_name, context)  # type: ignore[arg-type]
+        return args.infer_argument(self.parent, node_name, context)
     return _arguments_infer_argname(self, node_name, context)
 
 
