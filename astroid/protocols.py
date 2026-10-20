@@ -521,7 +521,8 @@ def _arguments_infer_argname(
     # first argument of instance/class method
     if args and self.arguments[0].name == name and functype != "staticmethod":
         # A method's function is defined in a class, so it has a parent
-        cls = self.parent.parent.scope()  # type: ignore[union-attr]
+        assert self.parent.parent is not None
+        cls = self.parent.parent.scope()
         is_metaclass = isinstance(cls, nodes.ClassDef) and cls.type == "metaclass"
         # If this is a metaclass, then the first argument will always
         # be the class, not an instance.
@@ -561,7 +562,8 @@ def _arguments_infer_argname(
         vararg.parent = self
         if not args and self.parent.name == "__init__":
             # A method's function is defined in a class, so it has a parent
-            cls = self.parent.parent.scope()  # type: ignore[union-attr]
+            assert self.parent.parent is not None
+            cls = self.parent.parent.scope()
             vararg.elts = [cls.instantiate_class()]
         yield vararg
         return
@@ -633,9 +635,10 @@ def assign_assigned_stmts(
         # A bare annotation (``x: int``) has no value
         yield util.Uninferable if self.value is None else self.value
         return None
+    # Unpacking (an assign path) only happens for assignments with a value
+    assert self.value is not None
     yield from _resolve_assignment_parts(
-        # Unpacking (an assign path) only happens for assignments with a value
-        self.value.infer(context),  # type: ignore[union-attr]
+        self.value.infer(context),
         assign_path,
         context,
     )
@@ -704,8 +707,10 @@ def _unwrap_typing_wrapper(node: nodes.NodeNG) -> nodes.NodeNG:
         if wrapper_qname not in _TYPING_WRAPPERS:
             break
         if wrapper_qname in _ANNOTATED_WRAPPERS and isinstance(node.slice, nodes.Tuple):
+            annotated = node.slice.elts[0]
             # The elements of a subscript's tuple in the source are nodes
-            node = node.slice.elts[0]  # type: ignore[assignment]
+            assert isinstance(annotated, nodes.NodeNG)
+            node = annotated
         else:
             node = node.slice
     return node
