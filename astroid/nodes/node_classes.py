@@ -63,15 +63,14 @@ _BadOpMessageT = typing.TypeVar("_BadOpMessageT", bound=util.BadOperationMessage
 
 # pylint: disable-next=consider-alternative-union-syntax
 AssignedStmtsPossibleNode = Union["List", "Tuple", "AssignName", "AssignAttr", None]
-# The protocols assigned_stmts functions differ in what they yield.
-AssignedStmtsCall = Callable[  # type: ignore[explicit-any]
+AssignedStmtsCall = Callable[
     [
         _NodesT,
         AssignedStmtsPossibleNode,
         InferenceContext | None,
         list[int] | None,
     ],
-    Any,
+    Iterator[InferenceResult],
 ]
 InferBinaryOperation = Callable[
     [_NodesT, InferenceContext | None],
