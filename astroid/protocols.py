@@ -417,6 +417,9 @@ def _resolve_looppart(
                 assigned = stmt.getitem(index_node, context)
             except (AstroidTypeError, AstroidIndexError):
                 continue
+            if assigned is None:
+                # ``__getitem__`` inferred to nothing
+                continue
             if not assign_path:
                 # we achieved to resolved the assignment path,
                 # don't infer the last part

@@ -8,6 +8,7 @@ import contextlib
 import unittest
 from collections.abc import Callable, Iterator
 from typing import Any
+from unittest import mock
 
 import pytest
 
@@ -807,3 +808,15 @@ def test_async_comprehension_target_is_uninferable() -> None:
         return [__(value) async for value in values]
     """)
     assert node.inferred() == [Uninferable]
+
+
+def test_for_loop_unpacking_skips_getitem_inferring_nothing() -> None:
+    node = extract_node("""
+    class A:
+        def __getitem__(self, index):
+            return index
+    for a, b in [A()] * 2:
+        a #@
+    """)
+    with mock.patch.object(Instance, "getitem", return_value=None):
+        assert node.inferred() == [Uninferable]
