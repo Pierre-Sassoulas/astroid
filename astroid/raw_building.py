@@ -207,6 +207,9 @@ def build_function(
     else:
         kwonlydefault_nodes = []
         for kwonlydefault in kwonlydefaults:
+            if kwonlydefault is inspect.Parameter.empty:
+                kwonlydefault_nodes.append(None)
+                continue
             kwonlydefault_node = nodes.const_factory(kwonlydefault)
             kwonlydefault_node.parent = argsnode
             kwonlydefault_nodes.append(kwonlydefault_node)
@@ -331,8 +334,9 @@ def _get_args_info_from_callable(
             args.append(param_name)
         elif param.kind == inspect.Parameter.KEYWORD_ONLY:
             kwonlyargs.append(param_name)
-            if param.default is not inspect.Parameter.empty:
-                kwonlydefaults.append(param.default)
+            # One entry per keyword-only argument, like kw_defaults: the ones
+            # without a default keep inspect.Parameter.empty.
+            kwonlydefaults.append(param.default)
             continue
         if param.default is not inspect.Parameter.empty:
             defaults.append(param.default)

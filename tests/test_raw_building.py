@@ -37,6 +37,7 @@ from astroid.raw_building import (
     build_module,
     object_build_class,
     object_build_datadescriptor,
+    object_build_function,
 )
 
 try:
@@ -334,3 +335,18 @@ def test_no_parent_cycle_between_sibling_classes() -> None:
                 node = node.parent
     finally:
         AstroidManager().clear_cache()
+
+
+def test_object_build_function_keyword_only_defaults() -> None:
+    """Keyword-only arguments without a default keep their place in kw_defaults."""
+
+    def func(*, first, second=1, third=None):
+        pass
+
+    node = object_build_function(DUMMY_MOD, func)
+    assert [arg.name for arg in node.args.kwonlyargs] == ["first", "second", "third"]
+    first, second, third = node.args.kw_defaults
+    assert first is None
+    assert isinstance(second, nodes.Const) and second.value == 1
+    assert isinstance(third, nodes.Const) and third.value is None
+    assert node.args.format_args() == "*, first, second=1, third=None"
