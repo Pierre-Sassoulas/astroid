@@ -348,7 +348,10 @@ class BaseInstance(Proxy):
 
         # Otherwise we infer the call to the __call__ dunder normally
         for node in self._proxied.igetattr("__call__", context):
-            if isinstance(node, UninferableBase) or not node.callable():
+            if (
+                not isinstance(node, (Proxy, nodes.ClassDef, nodes.Lambda))
+                or not node.callable()
+            ):
                 continue
             if isinstance(node, BaseInstance) and node._proxied is self._proxied:
                 inferred = True
@@ -385,7 +388,7 @@ class Instance(BaseInstance):
             # The special method is bound to something that cannot be called,
             # e.g. ``__add__ = some_module``: try the next method of the flow.
             raise AttributeInferenceError(target=self, attribute=operator)
-        return method.infer_call_result(self, context)
+        yield from method.infer_call_result(self, context)
 
     def __repr__(self) -> str:
         return f"<Instance of {self._proxied.root().name}.{self._proxied.name} at 0x{id(self)}>"

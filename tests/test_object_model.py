@@ -9,7 +9,7 @@ import pytest
 
 import astroid
 from astroid import bases, builder, nodes, objects, util
-from astroid.exceptions import InferenceError
+from astroid.exceptions import AttributeInferenceError, InferenceError
 
 try:
     import six  # type: ignore[import]  # pylint: disable=unused-import
@@ -1258,3 +1258,33 @@ def test_descriptor_get_called_with_a_caller_that_is_not_a_call() -> None:
     descriptor_get = next(node.infer())
     with pytest.raises(InferenceError):
         list(descriptor_get.infer_call_result(_infer_instance()))
+
+
+def test_descriptor_get_of_lambda_binds_a_lambda() -> None:
+    node = builder.extract_node("""
+    func = lambda: 1
+    func #@
+    """)
+    func = next(node.infer())
+    descriptor_get = func.special_attributes.lookup("__get__")
+    call = builder.extract_node("func.__get__(1, int)")
+    bound = next(descriptor_get.infer_call_result(call))
+    assert isinstance(bound, bases.BoundMethod)
+    assert isinstance(bound._proxied._proxied, nodes.Lambda)
+
+
+def test_generator_has_no_descriptor_get() -> None:
+    node = builder.extract_node("""
+    def func():
+        yield
+    func() #@
+    """)
+    generator = next(node.infer())
+    with pytest.raises(AttributeInferenceError):
+        generator.special_attributes.lookup("__get__")
+
+
+def test_descriptor_get_without_signature_keeps_the_arguments() -> None:
+    node = builder.extract_node("int.__format__.__get__")
+    descriptor_get = next(node.infer())
+    assert descriptor_get.args.args is None

@@ -8,6 +8,7 @@ import contextlib
 import unittest
 from collections.abc import Callable, Iterator
 from typing import Any
+from unittest import mock
 
 import pytest
 
@@ -769,6 +770,17 @@ def test_for_loop_starred_unpacking_stops_at_non_iterable_element() -> None:
     assert not inferred.elts
 
 
+def test_for_loop_nested_starred_unpacking_stops_at_name_element() -> None:
+    node = extract_node("""
+    x = (2, 3, 4)
+    for a, (b, *c) in [(1, x)]:
+        c #@
+    """)
+    inferred = next(node.infer())
+    assert isinstance(inferred, nodes.List)
+    assert not inferred.elts
+
+
 def test_bool_value_with_special_method_bound_to_module() -> None:
     node = extract_node("""
     import os
@@ -796,3 +808,20 @@ def test_async_comprehension_target_is_uninferable() -> None:
         return [__(value) async for value in values]
     """)
     assert node.inferred() == [Uninferable]
+
+
+def test_for_loop_unpacking_skips_getitem_inferring_nothing() -> None:
+    node = extract_node("""
+    class A:
+        def __getitem__(self, index):
+            return index
+    for a, b in [A()] * 2:
+        a #@
+    """)
+    with mock.patch.object(Instance, "getitem", return_value=None):
+        assert node.inferred() == [Uninferable]
+
+
+def test_unwrap_typing_wrapper_stops_at_value_without_qname() -> None:
+    node = extract_node("x: slice(1)[int]")
+    assert protocols._unwrap_typing_wrapper(node.annotation) is node.annotation

@@ -299,7 +299,7 @@ class PartialFunction(scoped_nodes.FunctionDef):
     def __init__(
         self,
         call: CallSite | None = None,
-        name: str | None = None,
+        name: str = "",
         lineno: int | None = None,
         col_offset: int | None = None,
         parent: NodeNG | bases.Proxy | None = None,
@@ -373,7 +373,7 @@ class Property(scoped_nodes.FunctionDef):
     def __init__(
         self,
         function: scoped_nodes.FunctionDef | scoped_nodes.Lambda,
-        name: str | None = None,
+        name: str = "",
         lineno: int | None = None,
         col_offset: int | None = None,
         parent: NodeNG | bases.Proxy | None = None,

@@ -12,10 +12,10 @@ import collections
 import itertools
 import operator as operator_mod
 from collections.abc import Callable, Generator, Iterable, Iterator, Sequence
-from typing import TYPE_CHECKING, Any, TypeVar
+from typing import TYPE_CHECKING, Any, TypeVar, cast
 
 from astroid import bases, decorators, nodes, util
-from astroid.builder import extract_node
+from astroid.builder import _extract_single_node
 from astroid.const import Context
 from astroid.context import InferenceContext, copy_context
 from astroid.exceptions import (
@@ -82,7 +82,8 @@ def dict_infer_unary_op(self: nodes.Dict, op: str) -> ConstFactoryResult:
 
 # Binary operations
 
-BIN_OP_IMPL = {
+# The operators accept whatever their operands support
+BIN_OP_IMPL: dict[str, Callable[[Any, Any], Any]] = {  # type: ignore[explicit-any]
     "+": lambda a, b: a + b,
     "-": lambda a, b: a - b,
     "/": lambda a, b: a / b,
@@ -95,7 +96,7 @@ BIN_OP_IMPL = {
     "^": lambda a, b: a ^ b,
     "<<": lambda a, b: a << b,
     ">>": lambda a, b: a >> b,
-    "@": operator_mod.matmul,
+    "@": lambda a, b: a @ b,
 }
 for _KEY, _IMPL in list(BIN_OP_IMPL.items()):
     BIN_OP_IMPL[_KEY + "="] = _IMPL
@@ -112,7 +113,8 @@ def _old_style_format_too_large(template: str | bytes, values: object) -> bool:
     if isinstance(values, dict):
         args: tuple[object, ...] = ()
     elif isinstance(values, tuple):
-        args = values
+        # Whatever a tuple holds is an object
+        args = cast("tuple[object, ...]", values)
     else:
         args = (values,)
     index = 0  # next positional argument
@@ -348,7 +350,7 @@ def instance_class_infer_binary_op(
         # The special method is bound to something that cannot be called,
         # e.g. ``__add__ = some_module``: try the next method of the flow.
         raise AttributeInferenceError(target=self, attribute=operator)
-    return method.infer_call_result(self, context)
+    yield from method.infer_call_result(self, context)
 
 
 # assignment ##################################################################
@@ -414,6 +416,9 @@ def _resolve_looppart(
             try:
                 assigned = stmt.getitem(index_node, context)
             except (AstroidTypeError, AstroidIndexError):
+                continue
+            if assigned is None:
+                # ``__getitem__`` inferred to nothing
                 continue
             if not assign_path:
                 # we achieved to resolved the assignment path,
@@ -626,7 +631,8 @@ def assign_assigned_stmts(
         yield from infer_instance_from_annotation(self.type_annotation, ctx=context)
         return None
     if not assign_path:
-        yield self.value
+        # A bare annotation (``x: int``) has no value
+        yield util.Uninferable if self.value is None else self.value
         return None
     yield from _resolve_assignment_parts(
         # Unpacking (an assign path) only happens for assignments with a value
@@ -649,21 +655,12 @@ def assign_annassigned_stmts(
     context: InferenceContext | None = None,
     assign_path: list[int] | None = None,
 ) -> Generator[InferenceResult]:
-    if (
-        not assign_path
-        and self.annotation is not None
-        and (
-            _is_stub_ellipsis_assign(self)
-            or (self.value is None and _is_stub_node(self))
-        )
+    if not assign_path and (
+        _is_stub_ellipsis_assign(self) or (self.value is None and _is_stub_node(self))
     ):
         yield from infer_instance_from_annotation(self.annotation, ctx=context)
         return
-    for inferred in assign_assigned_stmts(self, node, context, assign_path):
-        if inferred is None:
-            yield util.Uninferable
-        else:
-            yield inferred
+    yield from assign_assigned_stmts(self, node, context, assign_path)
 
 
 _TYPING_WRAPPERS = frozenset(
@@ -692,8 +689,7 @@ def _is_stub_ellipsis_assign(node: nodes.Assign | nodes.AnnAssign) -> bool:
 
 def _is_stub_node(node: nodes.NodeNG) -> bool:
     """Check if a node belongs to a stub module."""
-    root = node.root()
-    return isinstance(root, nodes.Module) and root.is_stub
+    return node.root().is_stub
 
 
 def _unwrap_typing_wrapper(node: nodes.NodeNG) -> nodes.NodeNG:
@@ -702,6 +698,8 @@ def _unwrap_typing_wrapper(node: nodes.NodeNG) -> nodes.NodeNG:
         try:
             wrapper = next(node.value.infer())
         except (InferenceError, StopIteration):
+            break
+        if not isinstance(wrapper, (nodes.LocalsDictNodeNG, bases.Proxy)):
             break
         wrapper_qname = wrapper.qname()
         if wrapper_qname not in _TYPING_WRAPPERS:
@@ -824,6 +822,8 @@ def excepthandler_assigned_stmts(
     from astroid import objects  # pylint: disable=import-outside-toplevel
 
     def _generate_assigned() -> Iterator[InferenceResult]:
+        # A handler binding a name always catches a type
+        assert self.type is not None
         for assigned in node_classes.unpack_infer(self.type):
             if isinstance(assigned, nodes.ClassDef):
                 assigned = objects.ExceptionInstance(assigned)
@@ -834,7 +834,7 @@ def excepthandler_assigned_stmts(
         # except * handler has assigned ExceptionGroup with caught
         # exceptions under exceptions attribute
         # pylint: disable-next=stop-iteration-return
-        eg = next(node_classes.unpack_infer(extract_node("""
+        eg = next(node_classes.unpack_infer(_extract_single_node("""
 from builtins import ExceptionGroup
 ExceptionGroup
 """)))
@@ -1194,7 +1194,7 @@ def starred_assigned_stmts(  # noqa: C901
             # *b* should now point to just the elements at that particular iteration step,
             # which astroid can't know about.
 
-            found_element = None
+            found_elts: list[InferenceResult] = []
             for index, lookup in enumerate(lookups):
                 if not isinstance(
                     element,
@@ -1209,22 +1209,19 @@ def starred_assigned_stmts(  # noqa: C901
                     ),
                 ):
                     break
-                if index + 1 is len(lookups):
-                    cur_lookup: slice[int, int | None, None] | int = last_lookup
-                else:
-                    # Grab just the index, not the whole length
-                    cur_lookup = lookup[0]
                 try:
                     itered_inner_element = element.itered()
-                    element = itered_inner_element[cur_lookup]
+                    if index + 1 == len(lookups):
+                        found_elts = list(itered_inner_element[last_lookup])
+                    else:
+                        # Grab just the index, not the whole length
+                        element = itered_inner_element[lookup[0]]
                 except IndexError:
                     break
                 except TypeError:
                     # Most likely the itered() call failed, cannot make sense of this
                     yield util.Uninferable
                     return
-                else:
-                    found_element = element
 
             unpacked = nodes.List(
                 ctx=Context.Store,
@@ -1232,7 +1229,7 @@ def starred_assigned_stmts(  # noqa: C901
                 lineno=self.lineno,
                 col_offset=self.col_offset,
             )
-            unpacked.postinit(elts=found_element or [])
+            unpacked.postinit(elts=found_elts)
             yield unpacked
             return
 

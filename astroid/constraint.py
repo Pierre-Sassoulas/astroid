@@ -182,15 +182,15 @@ class CallableConstraint(Constraint):
         """Return a new constraint for node if expr matches the "callable(x)"
         pattern. Else, return None.
         """
-        is_callable_call = (
+        if (
             isinstance(expr, nodes.Call)
             and isinstance(expr.func, nodes.Name)
             and expr.func.name == "callable"
             and not expr.keywords
             and len(expr.args) == 1
-        )
-        if is_callable_call and _matches(expr.args[0], node):
-            return cls(node=node, negate=negate)
+        ):
+            if _matches(expr.args[0], node):
+                return cls(node=node, negate=negate)
 
         return None
 

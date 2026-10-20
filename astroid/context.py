@@ -7,7 +7,7 @@
 from __future__ import annotations
 
 import contextlib
-from collections.abc import Iterator, Sequence
+from collections.abc import Generator, Sequence
 from typing import TYPE_CHECKING
 
 from astroid.typing import InferenceResult, SuccessfulInferenceResult
@@ -29,7 +29,7 @@ _InferenceCache = dict[
 _INFERENCE_CACHE: _InferenceCache = {}
 
 
-def _invalidate_cache() -> None:
+def _invalidate_cache() -> None:  # pyright: ignore[reportUnusedFunction]
     _INFERENCE_CACHE.clear()
 
 
@@ -147,7 +147,7 @@ class InferenceContext:
         return clone
 
     @contextlib.contextmanager
-    def restore_path(self) -> Iterator[None]:
+    def restore_path(self) -> Generator[None]:
         path = set(self.path)
         yield
         self.path = path

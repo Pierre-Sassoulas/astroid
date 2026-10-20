@@ -11,7 +11,7 @@ import inspect
 import sys
 import warnings
 from collections.abc import Callable, Generator, Iterable
-from typing import TYPE_CHECKING, ParamSpec, Protocol, TypeVar
+from typing import TYPE_CHECKING, ParamSpec, Protocol, TypeVar, cast
 
 from astroid import util
 from astroid.context import InferenceContext
@@ -61,7 +61,10 @@ def path_wrapper(
             if res.__class__.__name__ == "Instance":
                 # bases.Instance, which bases (importing this module) cannot
                 # provide for an isinstance narrowing
-                ares = res._proxied  # type: ignore[union-attr]
+                ares = cast(
+                    "InferenceResult",
+                    res._proxied,  # type: ignore[union-attr]
+                )
             else:
                 ares = res
             if ares not in yielded:
