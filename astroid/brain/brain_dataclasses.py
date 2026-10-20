@@ -296,15 +296,18 @@ def _generate_dataclass_init(
                 property_node = additional_assign
                 break
 
-        is_field = isinstance(value, nodes.Call) and _looks_like_dataclass_field_call(
-            value, check_scope=False
+        field_call = (
+            value
+            if isinstance(value, nodes.Call)
+            and _looks_like_dataclass_field_call(value, check_scope=False)
+            else None
         )
 
-        if is_field:
+        if field_call is not None:
             # Skip any fields that have `init=False`
             if any(
                 keyword.arg == "init" and (keyword.value.bool_value() is False)
-                for keyword in value.keywords  # type: ignore[union-attr] # value is never None
+                for keyword in field_call.keywords
             ):
                 # Also remove the name from the previous arguments to be inserted later
                 prev_pos_only_store.pop(name, None)
@@ -328,8 +331,8 @@ def _generate_dataclass_init(
             ann_str = annotation.as_string()
 
         if value:
-            if is_field:
-                result = _get_field_default(value)  # type: ignore[arg-type]
+            if field_call is not None:
+                result = _get_field_default(field_call)
                 if result:
                     default_type, default_node = result
                     if default_type == "default":
@@ -370,8 +373,8 @@ def _generate_dataclass_init(
 
         # If the field is a kw_only field, we need to add it to the kw_only_params
         # This overwrites whether or not the class is kw_only decorated
-        if is_field:
-            kw_only = [k for k in value.keywords if k.arg == "kw_only"]  # type: ignore[union-attr]
+        if field_call is not None:
+            kw_only = [k for k in field_call.keywords if k.arg == "kw_only"]
             if kw_only:
                 if kw_only[0].value.bool_value() is True:
                     kw_only_params.append(param_str)
