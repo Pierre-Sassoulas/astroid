@@ -10,7 +10,7 @@ import contextlib
 import functools
 import sys
 import warnings
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Generator
 from typing import ParamSpec, TypeVar
 
 import pytest
@@ -60,7 +60,7 @@ def get_name_node(start_from: nodes.NodeNG, name: str, index: int = 0) -> nodes.
 
 
 @contextlib.contextmanager
-def enable_warning(warning: type[Warning]) -> Iterator[None]:
+def enable_warning(warning: type[Warning]) -> Generator[None]:
     warnings.simplefilter("always", warning)
     try:
         yield

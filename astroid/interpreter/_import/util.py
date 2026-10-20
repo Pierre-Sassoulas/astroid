@@ -7,9 +7,9 @@ from __future__ import annotations
 import pathlib
 import sys
 from functools import lru_cache
-from importlib._bootstrap_external import _NamespacePath  # type: ignore[attr-defined]
-from importlib.machinery import NamespaceLoader
+from importlib.machinery import ModuleSpec, NamespaceLoader
 from importlib.util import _find_spec_from_path  # type: ignore[attr-defined]
+from typing import cast
 
 from astroid.const import IS_PYPY
 
@@ -26,22 +26,27 @@ def is_namespace(modname: str) -> bool:
     if modname in sys.builtin_module_names:
         return False
 
-    found_spec = None
+    found_spec: ModuleSpec | None = None
 
     # find_spec() attempts to import parent packages when given dotted paths.
     # That's unacceptable here, so we fallback to _find_spec_from_path(), which does
     # not, but requires instead that each single parent ('astroid', 'nodes', etc.)
     # be specced from left to right.
-    processed_components = []
-    last_submodule_search_locations: _NamespacePath | None = None
+    processed_components: list[str] = []
+    # A _NamespacePath for namespace packages, which typeshed types as a list
+    last_submodule_search_locations: list[str] | None = None
     for component in modname.split("."):
         processed_components.append(component)
         working_modname = ".".join(processed_components)
         try:
             # Both the modname and the path are built iteratively, with the
             # path (e.g. ['a', 'a/b', 'a/b/c']) lagging the modname by one
-            found_spec = _find_spec_from_path(
-                working_modname, path=last_submodule_search_locations
+            # The private helper is missing from typeshed
+            found_spec = cast(
+                "ModuleSpec | None",
+                _find_spec_from_path(
+                    working_modname, path=last_submodule_search_locations
+                ),
             )
         except AttributeError:
             return False

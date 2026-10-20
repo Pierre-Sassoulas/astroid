@@ -31,11 +31,7 @@ def _looks_like_parents_subscript(node: nodes.Subscript) -> bool:
     except (InferenceError, StopIteration):
         return False
     parents = "builtins.tuple" if PY313 else "pathlib._PathParents"
-    return (
-        isinstance(value, bases.Instance)
-        and isinstance(value._proxied, nodes.ClassDef)
-        and value.qname() == parents
-    )
+    return isinstance(value, bases.Instance) and value.qname() == parents
 
 
 def infer_parents_subscript(

@@ -425,6 +425,7 @@ def _get_elts(
         inferred = next(arg.infer(context))
     except (InferenceError, StopIteration) as exc:
         raise UseInferenceDefault from exc
+    items: list[tuple[InferenceResult, InferenceResult]]
     if isinstance(inferred, nodes.Dict):
         items = inferred.items
     elif is_iterable(inferred):

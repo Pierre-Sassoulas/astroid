@@ -440,7 +440,10 @@ def _build_from_function(
     except AttributeError:
         # Some implementations don't provide the code object
         code = None
-    filename = getattr(code, "co_filename", None)
+    # Builtins and descriptors only have a code object on some implementations
+    filename = getattr(
+        code, "co_filename", None  # pyright: ignore[reportUnknownArgumentType]
+    )
     if filename is None:
         return object_build_methoddescriptor(node, member)
     if filename == getattr(module, "__file__", None):
@@ -660,7 +663,7 @@ def _set_proxied(const: nodes.Const) -> nodes.ClassDef:
     return _CONST_PROXY[const.value.__class__]
 
 
-def _astroid_bootstrapping() -> None:
+def _astroid_bootstrapping() -> None:  # pyright: ignore[reportUnusedFunction]
     """astroid bootstrapping the builtins module"""
     # this boot strapping is necessary since we need the Const nodes to
     # inspect_build builtins, and then we can proxy Const

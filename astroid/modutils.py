@@ -29,14 +29,12 @@ from sys import stdlib_module_names
 from astroid.const import IS_JYTHON
 from astroid.interpreter._import import spec, util
 
-if sys.platform.startswith("win"):
-    PY_SOURCE_EXTS: tuple[str, ...] = ("py", "pyw", "pyi")
-    PY_SOURCE_EXTS_STUBS_FIRST = ("pyi", "pyw", "py")
-    PY_COMPILED_EXTS = ("dll", "pyd")
-else:
-    PY_SOURCE_EXTS = ("py", "pyi")
-    PY_SOURCE_EXTS_STUBS_FIRST = ("pyi", "py")
-    PY_COMPILED_EXTS = ("so",)
+_IS_WINDOWS = sys.platform.startswith("win")
+PY_SOURCE_EXTS: tuple[str, ...] = ("py", "pyw", "pyi") if _IS_WINDOWS else ("py", "pyi")
+PY_SOURCE_EXTS_STUBS_FIRST: tuple[str, ...] = (
+    ("pyi", "pyw", "py") if _IS_WINDOWS else ("pyi", "py")
+)
+PY_COMPILED_EXTS: tuple[str, ...] = ("dll", "pyd") if _IS_WINDOWS else ("so",)
 
 # Bytecode extensions are platform-independent, unlike PY_COMPILED_EXTS above.
 PY_BYTECODE_EXTS = ("pyc", "pyo")

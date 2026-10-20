@@ -231,7 +231,8 @@ class AstroidBuilder(raw_building.InspectBuilder):
         # The parent may be a proxy, which sets locals on the node it proxies
         def add_local(parent_or_root: SuccessfulInferenceResult, name: str) -> None:
             parent_or_root.set_local(name, node)
-            my_list = parent_or_root.scope().locals[name]
+            scope: nodes.LocalsDictNodeNG = parent_or_root.scope()
+            my_list = scope.locals[name]
             my_list.sort(key=lambda n: n.fromlineno or 0)
 
         assert node.parent  # It should always default to the module
@@ -352,7 +353,7 @@ def _extract_expressions(node: nodes.NodeNG) -> Iterator[nodes.NodeNG]:
         # When we find it, replace it by real_expr, so that the AST looks
         # like no call to _TRANSIENT_FUNCTION ever took place.
         for name in node.parent._astroid_fields:
-            child = getattr(node.parent, name)
+            child: nodes.NodeNG | list[object] | None = getattr(node.parent, name)
             if isinstance(child, list):
                 for idx, compound_child in enumerate(child):
                     if compound_child is node:
@@ -495,7 +496,9 @@ def extract_node(code: str, module_name: str = "") -> nodes.NodeNG | list[nodes.
     return extracted_without_none
 
 
-def _extract_single_node(code: str, module_name: str = "") -> nodes.NodeNG:
+def _extract_single_node(  # pyright: ignore[reportUnusedFunction]
+    code: str, module_name: str = ""
+) -> nodes.NodeNG:
     """Call extract_node while making sure that only one value is returned."""
     ret = extract_node(code, module_name)
     if isinstance(ret, list):

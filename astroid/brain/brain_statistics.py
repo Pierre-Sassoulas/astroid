@@ -47,6 +47,8 @@ def _looks_like_statistics_quantiles(node: nodes.Call) -> bool:
             except TypeError:
                 # If we can't determine the import context, be conservative
                 pass
+        case _:
+            pass
     return False
 
 

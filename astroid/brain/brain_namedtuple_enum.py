@@ -18,7 +18,6 @@ from astroid.builder import AstroidBuilder, _extract_single_node
 from astroid.context import InferenceContext
 from astroid.exceptions import (
     AstroidError,
-    AstroidTypeError,
     AstroidValueError,
     InferenceError,
     MroError,
@@ -252,8 +251,6 @@ def infer_named_tuple(
 
     try:
         attributes = _check_namedtuple_attributes(name, attributes, rename)
-    except AstroidTypeError as exc:
-        raise UseInferenceDefault("TypeError: " + str(exc)) from exc
     except AstroidValueError as exc:
         raise UseInferenceDefault("ValueError: " + str(exc)) from exc
 
@@ -312,7 +309,7 @@ class {name}(tuple):
 
 def _get_renamed_namedtuple_attributes(field_names: tuple[str, ...]) -> tuple[str, ...]:
     names = list(field_names)
-    seen = set()
+    seen: set[str] = set()
     for i, name in enumerate(field_names):
         # pylint: disable = too-many-boolean-expressions
         if (
@@ -338,10 +335,6 @@ def _check_namedtuple_attributes(
     # The following snippet is derived from the CPython Lib/collections/__init__.py sources
     # <snippet>
     for name in (typename, *attributes):
-        if not isinstance(name, str):
-            raise AstroidTypeError(
-                f"Type names and field names must be strings, not {type(name)!r}"
-            )
         if not name.isidentifier():
             raise AstroidValueError(
                 "Type names and field names must be valid" + f"identifiers: {name!r}"
@@ -351,7 +344,7 @@ def _check_namedtuple_attributes(
                 f"Type names and field names cannot be a keyword: {name!r}"
             )
 
-    seen = set()
+    seen: set[str] = set()
     for name in attributes:
         if name.startswith("_") and not rename:
             raise AstroidValueError(
@@ -457,8 +450,8 @@ def infer_enum_class(node: nodes.ClassDef) -> nodes.ClassDef:
         if node.root().name == "enum":
             # Skip if the class is directly from enum module.
             break
-        dunder_members = {}
-        target_names = set()
+        dunder_members: dict[str, nodes.ClassDef] = {}
+        target_names: set[str] = set()
         for local, values in node.locals.items():
             if (
                 any(not isinstance(value, nodes.AssignName) for value in values)
@@ -689,7 +682,7 @@ def _get_namedtuple_fields(node: nodes.Call) -> str:
     Because the fields are represented in their code form we can
     extract a node from them later on.
     """
-    names = []
+    names: list[str] = []
     container = None
     try:
         container = next(node.args[1].infer())

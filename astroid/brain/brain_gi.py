@@ -10,6 +10,7 @@ Helps with understanding everything imported from 'gi.repository'
 # pylint:disable=import-error,import-outside-toplevel
 
 import enum
+import importlib
 import inspect
 import itertools
 import re
@@ -59,7 +60,7 @@ def _gi_supports_inspect_signature() -> bool:
     """
     Indicates if pygobject supports inspect.signature().
     """
-    import gi  # pyright: ignore[reportMissingImports]
+    gi = importlib.import_module("gi")
 
     try:
         # inspect.signature() is supported since pygobject==3.51.0 (ee9558e4).
@@ -86,17 +87,18 @@ def _gi_is_method_call(obj: object) -> bool:
     return inspect.ismethod(obj) or inspect.ismethoddescriptor(obj)
 
 
-def _gi_build_stub(parent: types.ModuleType | type) -> str:  # noqa: C901
+def _gi_build_stub(parent: types.ModuleType | type[object]) -> str:  # noqa: C901
     """
     Inspect the passed module recursively and build stubs for functions,
     classes, etc.
     """
     # pylint: disable = too-many-branches, too-many-statements
 
-    classes = {}
-    functions = {}
+    classes: dict[str, type[object]] = {}
+    functions: dict[str, object] = {}
     constants: dict[str, int | str] = {}
-    methods = {}
+    # Whether each method is a static one
+    methods: dict[str, bool] = {}
     for name in dir(parent):
         if name.startswith("__") and name not in _special_methods:
             continue
@@ -117,7 +119,10 @@ def _gi_build_stub(parent: types.ModuleType | type) -> str:  # noqa: C901
         elif inspect.isfunction(obj) or inspect.isbuiltin(obj):
             functions[name] = obj
         elif _gi_is_method_call(obj):
-            methods[name] = obj
+            try:
+                methods[name] = not obj.is_method()
+            except AttributeError:
+                methods[name] = False
         elif (
             str(obj).startswith("<flags")
             or str(obj).startswith("<enum ")
@@ -173,13 +178,7 @@ def _gi_build_stub(parent: types.ModuleType | type) -> str:  # noqa: C901
         ret += "\n\n"
     if methods:
         ret += f"# {parent.__name__} methods\n\n"
-    for name in sorted(methods):
-        static = False
-        try:
-            if not methods[name].is_method():
-                static = True
-        except AttributeError:
-            pass
+    for name, static in sorted(methods.items()):
         if static:
             ret += "@staticmethod\n"
             ret += f"def {name}(*args, **kwargs):\n"
@@ -215,7 +214,7 @@ def _import_gi_module(modname: str) -> nodes.Module:
     # build astroid representation unless we already tried so
     if modname not in _inspected_modules:
         modnames = [modname]
-        optional_modnames = []
+        optional_modnames: list[str] = []
 
         # GLib and GObject may have some special case handling
         # in pygobject that we need to cope with. However at
@@ -234,13 +233,9 @@ def _import_gi_module(modname: str) -> nodes.Module:
                         # Just inspecting the code can raise gi deprecation
                         # warnings, so ignore them.
                         try:
-                            from gi import (  # pyright: ignore[reportMissingImports] # pylint:disable=import-error
-                                PyGIDeprecationWarning,
-                                PyGIWarning,
-                            )
-
-                            warnings.simplefilter("ignore", PyGIDeprecationWarning)
-                            warnings.simplefilter("ignore", PyGIWarning)
+                            gi = importlib.import_module("gi")
+                            warnings.simplefilter("ignore", gi.PyGIDeprecationWarning)
+                            warnings.simplefilter("ignore", gi.PyGIWarning)
                         except Exception:  # pylint:disable=broad-except
                             pass
 
@@ -305,7 +300,7 @@ def _looks_like_require_version(node: nodes.Call) -> bool:
 def _register_require_version(node: nodes.Call) -> nodes.Call:
     # Load the gi.require_version locally
     try:
-        import gi  # pyright: ignore[reportMissingImports]
+        gi = importlib.import_module("gi")
 
         name, version = node.args
         # Checked by _looks_like_require_version()
