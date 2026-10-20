@@ -28,7 +28,7 @@ class InferenceErrorInfo(TypedDict):
     raised with StopIteration exception.
     """
 
-    node: nodes.NodeNG
+    node: SuccessfulInferenceResult
     context: InferenceContext | None
     unknown: NotRequired[InferenceResult | None]
     assign_path: NotRequired[list[int] | None]
