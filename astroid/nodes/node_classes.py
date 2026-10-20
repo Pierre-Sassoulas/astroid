@@ -269,8 +269,9 @@ def _container_getitem(
             new_cls.parent = instance.parent
             return new_cls
         if isinstance(index, Const):
-            item: InferenceResult = elts[index.value]
-            return item
+            # A non-int value makes the subscript raise TypeError below
+            position: int = index.value
+            return elts[position]
     except ValueError as exc:
         raise AstroidValueError(
             message="Slice {index!r} cannot index container",
@@ -4542,11 +4543,11 @@ class UnaryOp(_base_nodes.OperatorNode):
                             or not inferred.callable()
                         ):
                             continue
-
                         # Only functions, classes and instances are callable
                         assert isinstance(
                             inferred, (Proxy, Lambda, FunctionDef, ClassDef)
                         )
+
                         context = copy_context(context)
                         context.boundnode = operand
                         context.callcontext = CallContext(args=[], callee=inferred)
