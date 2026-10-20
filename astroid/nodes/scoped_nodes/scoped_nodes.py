@@ -1121,6 +1121,8 @@ class FunctionDef(
 
     For a :class:`FunctionDef` this is always ``True``.
     """
+    type_annotation: NodeNG | None = None
+    """If present, this will contain the type annotation passed by a type comment"""
     type_comment_args: list[NodeNG] | None = None
     """
     If present, this will contain the type annotation for arguments
