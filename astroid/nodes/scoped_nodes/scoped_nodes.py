@@ -15,7 +15,7 @@ import itertools
 import os
 from collections.abc import Generator, Iterable, Iterator, Sequence
 from functools import cached_property, lru_cache
-from typing import TYPE_CHECKING, ClassVar, Literal, NoReturn, Self, TypeGuard
+from typing import TYPE_CHECKING, ClassVar, Literal, NoReturn, Self, TypeGuard, cast
 
 from astroid import bases, protocols, util
 from astroid.context import (
@@ -170,6 +170,11 @@ def function_to_method(
         if n.type != "staticmethod":
             return bases.UnboundMethod(n)
     return n
+
+
+def _builtin_object() -> ClassDef:
+    # builtins.object is always defined, and always as a class
+    return cast(ClassDef, builtin_lookup("object")[1][0])
 
 
 def _inferred_qname(node: SuccessfulInferenceResult) -> str | None:
@@ -2262,8 +2267,7 @@ class ClassDef(
         if context is None:
             context = InferenceContext()
         if not self.bases and self.qname() != "builtins.object":
-            # This should always be a ClassDef (which we don't assert for)
-            yield builtin_lookup("object")[1][0]  # type: ignore[misc]
+            yield _builtin_object()
             return
 
         for stmt in self.bases:
@@ -2928,7 +2932,7 @@ class ClassDef(
         context: InferenceContext | None = None,
         *,
         base_classes: frozenset[ClassDef] = frozenset(),
-    ):
+    ) -> Generator[ClassDef]:
         # Similar with .ancestors, but the difference is when one base is inferred,
         # only the first object is wanted. That's because
         # we aren't interested in superclasses, as in the following
@@ -2945,7 +2949,7 @@ class ClassDef(
         if context is None:
             context = InferenceContext()
         if not self.bases and self.qname() != "builtins.object":
-            yield builtin_lookup("object")[1][0]
+            yield _builtin_object()
             return
 
         for stmt in self.bases:
@@ -2968,7 +2972,7 @@ class ClassDef(
             if not baseobj.hide:
                 yield baseobj
             else:
-                yield from baseobj.bases
+                yield from (b for b in baseobj.bases if isinstance(b, ClassDef))
 
     def _resolve_circular_base(
         self,
