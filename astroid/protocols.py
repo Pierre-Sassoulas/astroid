@@ -12,7 +12,7 @@ import collections
 import itertools
 import operator as operator_mod
 from collections.abc import Callable, Generator, Iterable, Iterator, Sequence
-from typing import TYPE_CHECKING, Any, TypeVar, cast
+from typing import Any, cast
 
 from astroid import bases, decorators, nodes, util
 from astroid.builder import _extract_single_node
@@ -32,9 +32,6 @@ from astroid.typing import (
     InferenceResult,
     SuccessfulInferenceResult,
 )
-
-if TYPE_CHECKING:
-    _TupleListNodeT = TypeVar("_TupleListNodeT", nodes.Tuple, nodes.List)
 
 _CONTEXTLIB_MGR = "contextlib.contextmanager"
 
@@ -245,11 +242,11 @@ def const_infer_binary_op(
 
 
 def _multiply_seq_by_int(
-    self: _TupleListNodeT,
+    self: nodes.Tuple | nodes.List,
     opnode: nodes.AugAssign | nodes.BinOp,
     value: int,
     context: InferenceContext,
-) -> _TupleListNodeT:
+) -> nodes.Tuple | nodes.List:
     node = self.__class__(parent=opnode)
     if not (value > 0 and self.elts):
         node.elts = []
@@ -277,16 +274,15 @@ def _infer_sequence_elements(
             yield inferred
 
 
-# mypy cannot solve the decorator's ParamSpec for a TypeVar-typed self
-@decorators.yes_if_nothing_inferred  # type: ignore[arg-type]
+@decorators.yes_if_nothing_inferred
 def tl_infer_binary_op(
-    self: _TupleListNodeT,
+    self: nodes.Tuple | nodes.List,
     opnode: nodes.AugAssign | nodes.BinOp,
     operator: str,
     other: InferenceResult,
     context: InferenceContext,
     method: SuccessfulInferenceResult,
-) -> Generator[_TupleListNodeT | nodes.Const | util.UninferableBase]:
+) -> Generator[nodes.Tuple | nodes.List | nodes.Const | util.UninferableBase]:
     """Infer a binary operation on a tuple or list.
 
     The instance on which the binary operation is performed is a tuple
