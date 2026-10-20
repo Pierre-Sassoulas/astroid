@@ -3107,3 +3107,12 @@ class TestFrameNodes:
 
         assert module.body[1].value.locals["x"][0].frame() == module
         assert module.body[1].value.locals["x"][0].frame() == module
+
+
+def test_type_subclass_infer_call_result_without_caller() -> None:
+    node = extract_node("class Meta(type): pass")
+    inferred = list(node.infer_call_result(None))
+    assert len(inferred) == 1
+    assert isinstance(inferred[0], Instance)
+    assert inferred[0].qname() == ".Meta"
+
