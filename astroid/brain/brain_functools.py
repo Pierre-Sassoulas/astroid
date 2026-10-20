@@ -106,11 +106,7 @@ def _functools_partial_inference(
             inferred_wrapped_function.args.posonlyargs or (),
             inferred_wrapped_function.args.kwonlyargs or (),
         )
-    parameter_names = {
-        param.name
-        for param in function_parameters
-        if isinstance(param, nodes.AssignName)
-    }
+    parameter_names = {param.name for param in function_parameters}
     if set(call.keyword_arguments) - parameter_names:
         raise UseInferenceDefault("wrapped function received unknown parameters")
 
