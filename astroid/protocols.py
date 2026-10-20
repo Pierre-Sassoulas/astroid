@@ -12,7 +12,7 @@ import collections
 import itertools
 import operator as operator_mod
 from collections.abc import Callable, Generator, Iterable, Iterator, Sequence
-from typing import TYPE_CHECKING, Any, TypeVar
+from typing import TYPE_CHECKING, Any, TypeVar, cast
 
 from astroid import bases, decorators, nodes, util
 from astroid.builder import _extract_single_node
@@ -82,7 +82,8 @@ def dict_infer_unary_op(self: nodes.Dict, op: str) -> ConstFactoryResult:
 
 # Binary operations
 
-BIN_OP_IMPL = {
+# The operators accept whatever their operands support
+BIN_OP_IMPL: dict[str, Callable[[Any, Any], Any]] = {  # type: ignore[explicit-any]
     "+": lambda a, b: a + b,
     "-": lambda a, b: a - b,
     "/": lambda a, b: a / b,
@@ -95,7 +96,7 @@ BIN_OP_IMPL = {
     "^": lambda a, b: a ^ b,
     "<<": lambda a, b: a << b,
     ">>": lambda a, b: a >> b,
-    "@": operator_mod.matmul,
+    "@": lambda a, b: a @ b,
 }
 for _KEY, _IMPL in list(BIN_OP_IMPL.items()):
     BIN_OP_IMPL[_KEY + "="] = _IMPL
@@ -112,7 +113,8 @@ def _old_style_format_too_large(template: str | bytes, values: object) -> bool:
     if isinstance(values, dict):
         args: tuple[object, ...] = ()
     elif isinstance(values, tuple):
-        args = values
+        # Whatever a tuple holds is an object
+        args = cast("tuple[object, ...]", values)
     else:
         args = (values,)
     index = 0  # next positional argument
