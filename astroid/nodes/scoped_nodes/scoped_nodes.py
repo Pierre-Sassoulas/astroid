@@ -1510,12 +1510,10 @@ class FunctionDef(
                     inferred = next(node.infer())
                 except (InferenceError, StopIteration):
                     continue
-                if not isinstance(
-                    inferred, util.UninferableBase
-                ) and _inferred_qname(inferred) in {
-                    "abc.abstractproperty",
-                    "abc.abstractmethod",
-                }:
+                if not isinstance(inferred, util.UninferableBase) and (
+                    _inferred_qname(inferred)
+                    in {"abc.abstractproperty", "abc.abstractmethod"}
+                ):
                     return True
 
         for child_node in self.body:
@@ -2537,9 +2535,7 @@ class ClassDef(
             # to the attribute happening *after* the attribute's definition (e.g. AugAssigns on lists)
             if len(attributes) > 1:
                 first_attr, attributes = attributes[0], attributes[1:]
-                first_scope = (
-                    first_attr.parent.scope() if first_attr.parent else None
-                )
+                first_scope = first_attr.parent.scope() if first_attr.parent else None
                 attributes = [first_attr] + [
                     attr
                     for attr in attributes
