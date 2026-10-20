@@ -192,16 +192,6 @@ def infer_typing_attr(
         # infer the native methods, replace them for an easy inference tip
         func_to_add = _extract_single_node(CLASS_GETITEM_TEMPLATE)
         value.locals["__class_getitem__"] = [func_to_add]
-        if (
-            isinstance(node.parent, nodes.ClassDef)
-            and node in node.parent.bases
-            and getattr(node.parent, "__cache", None)
-        ):
-            # node.parent.slots is evaluated and cached before the inference tip
-            # is first applied. Remove the last result to allow a recalculation of slots
-            cache = node.parent.__cache  # type: ignore[attr-defined] # Unrecognized getattr
-            if cache.get(node.parent.slots) is not None:
-                del cache[node.parent.slots]
         # Avoid re-instantiating this class every time it's seen
         node._explicit_inference = lambda node, context: iter([value])
         return iter([value])
