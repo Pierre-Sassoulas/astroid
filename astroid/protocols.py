@@ -15,7 +15,7 @@ from collections.abc import Callable, Generator, Iterable, Iterator, Sequence
 from typing import TYPE_CHECKING, Any, TypeVar
 
 from astroid import bases, decorators, nodes, util
-from astroid.builder import extract_node
+from astroid.builder import _extract_single_node
 from astroid.const import Context
 from astroid.context import InferenceContext, copy_context
 from astroid.exceptions import (
@@ -824,6 +824,8 @@ def excepthandler_assigned_stmts(
     from astroid import objects  # pylint: disable=import-outside-toplevel
 
     def _generate_assigned() -> Iterator[InferenceResult]:
+        # A handler binding a name always catches a type
+        assert self.type is not None
         for assigned in node_classes.unpack_infer(self.type):
             if isinstance(assigned, nodes.ClassDef):
                 assigned = objects.ExceptionInstance(assigned)
@@ -834,7 +836,7 @@ def excepthandler_assigned_stmts(
         # except * handler has assigned ExceptionGroup with caught
         # exceptions under exceptions attribute
         # pylint: disable-next=stop-iteration-return
-        eg = next(node_classes.unpack_infer(extract_node("""
+        eg = next(node_classes.unpack_infer(_extract_single_node("""
 from builtins import ExceptionGroup
 ExceptionGroup
 """)))
