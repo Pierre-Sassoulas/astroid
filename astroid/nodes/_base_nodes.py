@@ -585,7 +585,9 @@ class OperatorNode(NodeNG):
         """Check if type1 is the same as type2."""
         # The types come from helpers.object_type: classes, proxies of classes
         # or Uninferable, which all answer qname().
-        same: bool = type1.qname() == type2.qname()  # type: ignore[union-attr] # pyright: ignore[reportAttributeAccessIssue]
+        qname_owners = (nodes.LocalsDictNodeNG, bases.Proxy, util.UninferableBase)
+        assert isinstance(type1, qname_owners) and isinstance(type2, qname_owners)
+        same: bool = type1.qname() == type2.qname()
         return same
 
     @staticmethod
