@@ -15,7 +15,16 @@ import itertools
 import os
 from collections.abc import Generator, Iterable, Iterator, Sequence
 from functools import cached_property, lru_cache
-from typing import TYPE_CHECKING, ClassVar, Literal, NoReturn, Self, TypeGuard, cast
+from typing import (
+    TYPE_CHECKING,
+    ClassVar,
+    Literal,
+    NoReturn,
+    Self,
+    TypeGuard,
+    cast,
+    overload,
+)
 
 from astroid import bases, protocols, util
 from astroid.context import (
@@ -460,7 +469,7 @@ class Module(LocalsDictNodeNG):
 
     def import_module(
         self,
-        modname: str,
+        modname: str | None,
         relative_only: bool = False,
         level: int | None = None,
         use_cache: bool = True,
@@ -496,7 +505,17 @@ class Module(LocalsDictNodeNG):
                 raise
         return AstroidManager().ast_from_module_name(modname, use_cache=use_cache)
 
-    def relative_to_absolute_name(self, modname: str, level: int | None) -> str:
+    @overload
+    def relative_to_absolute_name(self, modname: str, level: int | None) -> str: ...
+
+    @overload
+    def relative_to_absolute_name(
+        self, modname: str | None, level: int | None
+    ) -> str | None: ...
+
+    def relative_to_absolute_name(
+        self, modname: str | None, level: int | None
+    ) -> str | None:
         """Get the absolute module name for a relative import.
 
         The relative import can be implicit or explicit.
@@ -522,6 +541,7 @@ class Module(LocalsDictNodeNG):
             elif (
                 self.path
                 and not os.path.exists(os.path.dirname(self.path[0]) + "/__init__.py")
+                and modname is not None
                 and os.path.exists(
                     os.path.dirname(self.path[0]) + "/" + modname.split(".")[0]
                 )
