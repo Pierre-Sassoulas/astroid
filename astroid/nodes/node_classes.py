@@ -4477,7 +4477,9 @@ class UnaryOp(_base_nodes.OperatorNode):
         """Infer what an UnaryOp should return when evaluated."""
         # pylint: disable-next=import-outside-toplevel
         from astroid import objects
-        from astroid.nodes import ClassDef  # pylint: disable=import-outside-toplevel
+
+        # pylint: disable-next=import-outside-toplevel
+        from astroid.nodes import ClassDef, FunctionDef, Lambda
 
         for operand in self.operand.infer(context):
             if isinstance(
@@ -4517,7 +4519,9 @@ class UnaryOp(_base_nodes.OperatorNode):
                         yield util.BadUnaryOperationMessage(
                             operand,
                             self.op,
-                            AttributeInferenceError(target=operand, attribute=method_name),
+                            AttributeInferenceError(
+                                target=operand, attribute=method_name
+                            ),
                         )
                         continue
 
@@ -4539,6 +4543,10 @@ class UnaryOp(_base_nodes.OperatorNode):
                         ):
                             continue
 
+                        # Only functions, classes and instances are callable
+                        assert isinstance(
+                            inferred, (Proxy, Lambda, FunctionDef, ClassDef)
+                        )
                         context = copy_context(context)
                         context.boundnode = operand
                         context.callcontext = CallContext(args=[], callee=inferred)
