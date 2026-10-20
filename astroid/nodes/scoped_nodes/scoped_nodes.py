@@ -2575,7 +2575,12 @@ class ClassDef(
 
         def _valid_getattr(node: InferenceResult) -> bool:
             root = node.root()
-            return root.name != "builtins" and root.pure_python
+            # An uninferable __getattr__ has an Uninferable root.
+            return (
+                isinstance(root, Module)
+                and root.name != "builtins"
+                and root.pure_python
+            )
 
         try:
             return _valid_getattr(self.getattr("__getattr__", context)[0])
