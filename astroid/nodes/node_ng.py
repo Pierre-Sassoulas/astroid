@@ -192,7 +192,7 @@ class NodeNG:
         else:
             string = "%(cname)s(%(fields)s)"
             alignment = len(cname) + 1
-        result = []
+        result: list[str] = []
         for field in self._other_fields + self._astroid_fields:
             value = getattr(self, field, "Unknown")
             width = max(80 - len(field) - alignment, 1)

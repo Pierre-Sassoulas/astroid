@@ -857,7 +857,7 @@ class Arguments(
 
         :returns: The formatted arguments.
         """
-        result = []
+        result: list[str] = []
         positional_only_defaults = []
         positional_or_keyword_defaults = self.defaults
         if self.defaults:
@@ -1450,7 +1450,7 @@ class AugAssign(
 
         If any inferred result is uninferable, an empty list is returned.
         """
-        bad = []
+        bad: list[util.BadBinaryOperationMessage] = []
         try:
             for result in self._infer_augassign(context=context):
                 if result is util.Uninferable:
@@ -4453,7 +4453,7 @@ class UnaryOp(_base_nodes.OperatorNode):
 
         If any inferred result is uninferable, an empty list is returned.
         """
-        bad = []
+        bad: list[util.BadUnaryOperationMessage] = []
         try:
             for result in self._infer_unaryop(context=context):
                 if result is util.Uninferable:

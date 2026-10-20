@@ -787,7 +787,7 @@ def _escaped_fstring_literal(value: str, quote: str) -> str:
 
 def _import_string(names: list[tuple[str, str | None]]) -> str:
     """return a list of (name, asname) formatted as a string"""
-    _names = []
+    _names: list[str] = []
     for name, asname in names:
         if asname is not None:
             _names.append(f"{name} as {asname}")
