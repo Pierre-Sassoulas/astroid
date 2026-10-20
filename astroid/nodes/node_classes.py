@@ -85,13 +85,15 @@ InferUnaryOp = Callable[[_NodesT, str], ConstFactoryResult]
 
 
 @decorators.raise_if_nothing_inferred
-def unpack_infer(stmt, context: InferenceContext | None = None):
+def unpack_infer(
+    stmt: SuccessfulInferenceResult, context: InferenceContext | None = None
+) -> Generator[InferenceResult, None, InferenceErrorInfo]:
     """recursively generate nodes inferred by the given statement.
     If the inferred value is a list or a tuple, recurse on the elements
     """
     if isinstance(stmt, (List, Tuple)):
         for elt in stmt.elts:
-            if elt is util.Uninferable:
+            if isinstance(elt, util.UninferableBase):
                 yield elt
                 continue
             yield from unpack_infer(elt, context)
@@ -111,7 +113,11 @@ def unpack_infer(stmt, context: InferenceContext | None = None):
     return {"node": stmt, "context": context}
 
 
-def are_exclusive(stmt1, stmt2, exceptions: list[str] | None = None) -> bool:
+def are_exclusive(
+    stmt1: InferenceResult,
+    stmt2: InferenceResult,
+    exceptions: list[str] | None = None,
+) -> bool:
     """return true if the two given statements are mutually exclusive
 
     `exceptions` may be a list of exception names. If specified, discard If
@@ -125,9 +131,9 @@ def are_exclusive(stmt1, stmt2, exceptions: list[str] | None = None) -> bool:
         in exclusive branches
     """
     # index stmt1's parents
-    stmt1_parents = {}
-    children = {}
-    previous = stmt1
+    stmt1_parents: dict[NodeNG | Proxy, int] = {}
+    children: dict[NodeNG | Proxy, InferenceResult] = {}
+    previous: InferenceResult = stmt1
     for node in stmt1.node_ancestors():
         stmt1_parents[node] = 1
         children[node] = previous
@@ -155,12 +161,14 @@ def are_exclusive(stmt1, stmt2, exceptions: list[str] | None = None) -> bool:
                     first_in_body_caught_by_handlers = (
                         c2attr == "handlers"
                         and c1attr == "body"
+                        and isinstance(previous, ExceptHandler)
                         and previous.catch(exceptions)
                     )
                     second_in_body_caught_by_handlers = (
                         c2attr == "body"
                         and c1attr == "handlers"
-                        and children[node].catch(exceptions)
+                        and isinstance(child := children[node], ExceptHandler)
+                        and child.catch(exceptions)
                     )
                     first_in_else_other_in_handlers = (
                         c2attr == "handlers" and c1attr == "orelse"

@@ -349,7 +349,9 @@ class NodeNG:
         msg = "Could not find %s in %s's children"
         raise AstroidError(msg % (repr(child), repr(self)))
 
-    def locate_child(self, child: NodeNG) -> tuple[str, NodeNG | Sequence[NodeNG]]:
+    def locate_child(
+        self, child: InferenceResult
+    ) -> tuple[str, InferenceResult | Sequence[NodeNG]]:
         """Find the field of this node that contains the given child.
 
         :param child: The child node to search fields for.
