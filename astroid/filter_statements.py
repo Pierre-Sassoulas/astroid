@@ -45,7 +45,7 @@ def _get_if_statement_ancestor(node: nodes.NodeNG) -> nodes.If | None:
     return None
 
 
-def _filter_stmts(
+def _filter_stmts(  # pyright: ignore[reportUnusedFunction] # used by LocalsDictNodeNG
     base_node: _base_nodes.LookupMixIn,
     stmts: Sequence[InferenceResult],
     frame: nodes.LocalsDictNodeNG,
