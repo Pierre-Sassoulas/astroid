@@ -631,7 +631,8 @@ def assign_assigned_stmts(
         yield from infer_instance_from_annotation(self.type_annotation, ctx=context)
         return None
     if not assign_path:
-        yield self.value
+        # A bare annotation (``x: int``) has no value
+        yield util.Uninferable if self.value is None else self.value
         return None
     yield from _resolve_assignment_parts(
         # Unpacking (an assign path) only happens for assignments with a value
@@ -654,21 +655,12 @@ def assign_annassigned_stmts(
     context: InferenceContext | None = None,
     assign_path: list[int] | None = None,
 ) -> Generator[InferenceResult]:
-    if (
-        not assign_path
-        and self.annotation is not None
-        and (
-            _is_stub_ellipsis_assign(self)
-            or (self.value is None and _is_stub_node(self))
-        )
+    if not assign_path and (
+        _is_stub_ellipsis_assign(self) or (self.value is None and _is_stub_node(self))
     ):
         yield from infer_instance_from_annotation(self.annotation, ctx=context)
         return
-    for inferred in assign_assigned_stmts(self, node, context, assign_path):
-        if inferred is None:
-            yield util.Uninferable
-        else:
-            yield inferred
+    yield from assign_assigned_stmts(self, node, context, assign_path)
 
 
 _TYPING_WRAPPERS = frozenset(
