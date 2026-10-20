@@ -350,7 +350,7 @@ def instance_class_infer_binary_op(
         # The special method is bound to something that cannot be called,
         # e.g. ``__add__ = some_module``: try the next method of the flow.
         raise AttributeInferenceError(target=self, attribute=operator)
-    return method.infer_call_result(self, context)
+    yield from method.infer_call_result(self, context)
 
 
 # assignment ##################################################################
