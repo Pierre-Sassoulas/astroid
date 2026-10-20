@@ -467,10 +467,12 @@ class BaseFunctionModel(ObjectModel[_FunctionT_co]):
 
     @property
     def attr___get__(self) -> bases.BoundMethod:
-        func = self._instance
+        instance = self._instance
 
-        if self._is_builtin_func():
-            raise AttributeInferenceError(target=func, attribute="__get__")
+        # Generators are not descriptors
+        if self._is_builtin_func() or isinstance(instance, bases.Generator):
+            raise AttributeInferenceError(target=instance, attribute="__get__")
+        func: nodes.FunctionDef | nodes.Lambda | bases.UnboundMethod = instance
 
         class DescriptorBoundMethod(bases.BoundMethod):
             """Bound method which knows how to understand calling descriptor
@@ -518,30 +520,47 @@ class BaseFunctionModel(ObjectModel[_FunctionT_co]):
 
                 # Rebuild the original value, but with the parent set as the
                 # class where it will be bound.
-                new_func_kwargs = {
-                    "name": func.name,
-                    "lineno": func.lineno,
-                    "col_offset": func.col_offset,
-                    "parent": func.parent,
-                    "end_lineno": func.end_lineno,
-                    "end_col_offset": func.end_col_offset,
-                }
                 # pylint: disable-next=import-outside-toplevel; circular import
                 from astroid import objects
 
-                if isinstance(func, objects.PartialFunction):
-                    new_func_kwargs["filled_args"] = func.filled_args
-                    new_func_kwargs["filled_keywords"] = func.filled_keywords
-
-                new_func = func.__class__(**new_func_kwargs)
-                # pylint: disable=no-member
-                new_func.postinit(
-                    func.args,
-                    func.body,
-                    func.decorators,
-                    func.returns,
-                    doc_node=func.doc_node,
-                )
+                new_func: nodes.FunctionDef | nodes.Lambda
+                if isinstance(func, nodes.FunctionDef):
+                    if isinstance(func, objects.PartialFunction):
+                        new_func = func.__class__(
+                            name=func.name,
+                            lineno=func.lineno,
+                            col_offset=func.col_offset,
+                            parent=func.parent,
+                            end_lineno=func.end_lineno,
+                            end_col_offset=func.end_col_offset,
+                            filled_args=func.filled_args,
+                            filled_keywords=func.filled_keywords,
+                        )
+                    else:
+                        new_func = func.__class__(
+                            name=func.name,
+                            lineno=func.lineno,
+                            col_offset=func.col_offset,
+                            parent=func.parent,
+                            end_lineno=func.end_lineno,
+                            end_col_offset=func.end_col_offset,
+                        )
+                    new_func.postinit(
+                        func.args,
+                        func.body,
+                        func.decorators,
+                        func.returns,
+                        doc_node=func.doc_node,
+                    )
+                else:
+                    new_func = nodes.Lambda(
+                        lineno=func.lineno,
+                        col_offset=func.col_offset,
+                        parent=func.parent,
+                        end_lineno=func.end_lineno,
+                        end_col_offset=func.end_col_offset,
+                    )
+                    new_func.postinit(func.args, func.body)
 
                 # Build a proper bound method that points to our newly built function.
                 proxy = bases.UnboundMethod(new_func)
