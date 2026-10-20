@@ -60,7 +60,6 @@ class Statement(NodeNG):
         """The next sibling statement node.
 
         :returns: The next sibling statement node.
-        :rtype: NodeNG or None
         """
         assert self.parent
         stmts = self.parent.child_sequence(self)
@@ -74,7 +73,6 @@ class Statement(NodeNG):
         """The previous sibling statement.
 
         :returns: The previous sibling statement node.
-        :rtype: NodeNG or None
         """
         assert self.parent
         stmts = self.parent.child_sequence(self)
@@ -333,11 +331,9 @@ class LookupMixIn(NodeNG):
         """Lookup the inferred values of the given variable.
 
         :param name: The variable name to find values for.
-        :type name: str
 
         :returns: The inferred values of the statements returned from
             :meth:`lookup`.
-        :rtype: Iterator
         """
         frame, stmts = self.lookup(name)
         context = InferenceContext()

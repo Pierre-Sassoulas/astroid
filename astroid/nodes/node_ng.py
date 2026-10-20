@@ -130,7 +130,6 @@ class NodeNG:
         called instead of the default interface.
 
         :returns: The inferred values.
-        :rtype: Iterator
         """
         if context is None:
             context = InferenceContext()
@@ -272,7 +271,6 @@ class NodeNG:
         """Check if this node is the parent of the given node.
 
         :param node: The node to check if it is the child.
-        :type node: NodeNG
 
         :returns: Whether this node is the parent of the given node.
         """
@@ -331,10 +329,8 @@ class NodeNG:
         """Search for the sequence that contains this child.
 
         :param child: The child node to search sequences for.
-        :type child: NodeNG
 
         :returns: The sequence containing the given child node.
-        :rtype: Iterator[NodeNG]
 
         :raises AstroidError: If no sequence could be found that contains
             the given child.
@@ -357,11 +353,9 @@ class NodeNG:
         """Find the field of this node that contains the given child.
 
         :param child: The child node to search fields for.
-        :type child: NodeNG
 
         :returns: A tuple of the name of the field that contains the child,
             and the sequence or node that contains the child node.
-        :rtype: tuple[str, Iterator[NodeNG] or NodeNG]
 
         :raises AstroidError: If no field could be found that contains
             the given child.
@@ -386,7 +380,6 @@ class NodeNG:
         """The next sibling statement node.
 
         :returns: The next sibling statement node.
-        :rtype: NodeNG or None
         """
         assert self.parent
         return self.parent.next_sibling()
@@ -395,7 +388,6 @@ class NodeNG:
         """The previous sibling statement.
 
         :returns: The previous sibling statement node.
-        :rtype: NodeNG or None
         """
         assert self.parent
         return self.parent.previous_sibling()
@@ -572,7 +564,6 @@ class NodeNG:
         .. seealso:: :ref:`inference`
 
         :returns: The inferred values.
-        :rtype: list
         """
         return list(self.infer())
 
@@ -584,7 +575,6 @@ class NodeNG:
             On anything other than a :class:`ClassDef` this will return self.
 
         :returns: An instance of the defined class.
-        :rtype: object
         """
         return self
 
@@ -593,7 +583,6 @@ class NodeNG:
 
         :param node: The node defining the base to look for.
             Usually this is a :class:`Name` node.
-        :type node: NodeNG
         """
         return False
 
@@ -623,30 +612,23 @@ class NodeNG:
         """Get a string representation of the AST from this node.
 
         :param ids: If true, includes the ids with the node type names.
-        :type ids: bool
 
         :param include_linenos: If true, includes the line numbers and
             column offsets.
-        :type include_linenos: bool
 
         :param ast_state: If true, includes information derived from
             the whole AST like local and global variables.
-        :type ast_state: bool
 
         :param indent: A string to use to indent the output string.
-        :type indent: str
 
         :param max_depth: If set to a positive integer, won't return
             nodes deeper than max_depth in the string.
-        :type max_depth: int
 
         :param max_width: Attempt to format the output string to stay
             within this number of characters, but can exceed it under some
             circumstances. Only positive integer values are valid, the default is 80.
-        :type max_width: int
 
         :returns: The string representation of the AST.
-        :rtype: str
         """
 
         # pylint: disable = too-many-statements
@@ -788,7 +770,6 @@ class NodeNG:
               node's value.
 
         :returns: The boolean value of this node.
-        :rtype: bool or Uninferable
         """
         return util.Uninferable
 

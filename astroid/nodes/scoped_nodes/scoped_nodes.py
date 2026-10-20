@@ -313,10 +313,7 @@ class Module(LocalsDictNodeNG):
         return None
 
     def stream(self) -> io.BytesIO | io.BufferedReader | None:
-        """Get a stream to the underlying file or bytes.
-
-        :type: io.IOBase or io.BytesIO or None
-        """
+        """Get a stream to the underlying file or bytes."""
         return self._get_stream()
 
     def block_range(self, lineno: int) -> tuple[int, int]:
@@ -362,7 +359,6 @@ class Module(LocalsDictNodeNG):
         """A human readable type of this node.
 
         :returns: The type of this node.
-        :rtype: str
         """
         return "Module"
 
@@ -438,15 +434,13 @@ class Module(LocalsDictNodeNG):
     def previous_sibling(self) -> None:
         """The previous sibling statement.
 
-        :returns: The previous sibling statement node.
-        :rtype: NodeNG or None
+        A :class:`Module` has no sibling, so this is always ``None``.
         """
 
     def next_sibling(self) -> None:
         """The next sibling statement node.
 
-        :returns: The next sibling statement node.
-        :rtype: NodeNG or None
+        A :class:`Module` has no sibling, so this is always ``None``.
         """
 
     _absolute_import_activated = True
@@ -551,7 +545,6 @@ class Module(LocalsDictNodeNG):
         current CPython implementation of wildcard imports.
 
         :returns: The list of imported names.
-        :rtype: list(str)
         """
         # We separate the different steps of lookup in try/excepts
         # to avoid catching too many Exceptions
@@ -598,7 +591,6 @@ class Module(LocalsDictNodeNG):
         """The list of the names that are publicly available in this module.
 
         :returns: The list of public names.
-        :rtype: list(str)
         """
         return [name for name in self.keys() if not name.startswith("_")]
 
@@ -741,7 +733,6 @@ class DictComp(ComprehensionScope):
 
         :returns: The boolean value of this node.
             For a :class:`DictComp` this is always :obj:`~astroid.Uninferable`.
-        :rtype: Uninferable
         """
         return util.Uninferable
 
@@ -800,7 +791,6 @@ class SetComp(ComprehensionScope):
 
         :returns: The boolean value of this node.
             For a :class:`SetComp` this is always :obj:`~astroid.Uninferable`.
-        :rtype: Uninferable
         """
         return util.Uninferable
 
@@ -859,7 +849,6 @@ class ListComp(ComprehensionScope):
 
         :returns: The boolean value of this node.
             For a :class:`ListComp` this is always :obj:`~astroid.Uninferable`.
-        :rtype: Uninferable
         """
         return util.Uninferable
 
@@ -981,7 +970,6 @@ class Lambda(_base_nodes.FilterStmtsBaseNode, LocalsDictNodeNG):
         """A human readable type of this node.
 
         :returns: The type of this node.
-        :rtype: str
         """
         if "method" in self.type:
             return "Method"
@@ -1001,7 +989,6 @@ class Lambda(_base_nodes.FilterStmtsBaseNode, LocalsDictNodeNG):
         etc.), as well as positional-only and keyword-only arguments.
 
         :returns: The names of the arguments.
-        :rtype: list(str)
         """
         if self.args.arguments:  # maybe None with builtin functions
             names = [elt.name for elt in self.args.arguments]
@@ -1129,17 +1116,10 @@ class FunctionDef(
     args: Arguments
     """The arguments that the function takes."""
 
-    is_function = True
+    is_function: ClassVar[bool] = True
     """Whether this node indicates a function.
 
     For a :class:`FunctionDef` this is always ``True``.
-
-    :type: bool
-    """
-    type_annotation = None
-    """If present, this will contain the type annotation passed by a type comment
-
-    :type: NodeNG or None
     """
     type_comment_args: list[NodeNG] | None = None
     """
@@ -1297,7 +1277,6 @@ class FunctionDef(
         """A human readable type of this node.
 
         :returns: The type of this node.
-        :rtype: str
         """
         if "method" in self.type:
             return "Method"
@@ -1312,7 +1291,6 @@ class FunctionDef(
         etc.), as well as positional-only and keyword-only arguments.
 
         :returns: The names of the arguments.
-        :rtype: list(str)
         """
         if self.args.arguments:  # maybe None with builtin functions
             names = [elt.name for elt in self.args.arguments]
@@ -1426,10 +1404,7 @@ class FunctionDef(
 
     @cached_property
     def blockstart_tolineno(self) -> int:
-        """The line on which the beginning of this block ends.
-
-        :type: int
-        """
+        """The line on which the beginning of this block ends."""
         if self.returns:
             return self.returns.tolineno
         return self.args.tolineno
@@ -1576,7 +1551,6 @@ class FunctionDef(
         """Infer what the function yields when called
 
         :returns: What the function yields
-        :rtype: Iterator[NodeNG or Uninferable] or None
         """
         for yield_ in self.nodes_of_class(node_classes.Yield):
             if yield_.value is None:
@@ -1872,7 +1846,6 @@ def get_wrapping_class(node: NodeNG) -> ClassDef | None:
     is a parent for the said node.
 
     :returns: The class that wraps the given node
-    :rtype: ClassDef or None
     """
 
     klass: FunctionDef | Module | ClassDef | Lambda | None = node.frame()
@@ -1912,16 +1885,10 @@ class ClassDef(
         "type_params",
     )  # name
 
-    decorators = None
-    """The decorators that are applied to this class.
-
-    :type: Decorators or None
-    """
-    special_attributes = ClassModel()
-    """The names of special attributes that this class has.
-
-    :type: objectmodel.ClassModel
-    """
+    decorators: node_classes.Decorators | None = None
+    """The decorators that are applied to this class."""
+    special_attributes: ClassModel = ClassModel()
+    """The names of special attributes that this class has."""
 
     _type: Literal["class", "exception", "metaclass"] | None = None
     _metaclass: NodeNG | None = None
@@ -1937,8 +1904,7 @@ class ClassDef(
         _class_type,
         doc=(
             "The class type for this node.\n\n"
-            "Possible values are: class, metaclass, exception.\n\n"
-            ":type: str"
+            "Possible values are: class, metaclass, exception."
         ),
     )
     _other_fields = ("name", "is_dataclass", "position")
@@ -2011,7 +1977,6 @@ class ClassDef(
         """Get implicitly defined class definition locals.
 
         :returns: the the name and Const pair for each local
-        :rtype: tuple(tuple(str, node_classes.Const), ...)
         """
         locals_: tuple[tuple[str, NodeNG], ...] = (
             ("__module__", self.special_attributes.attr___module__),
@@ -2051,10 +2016,7 @@ class ClassDef(
 
     @cached_property
     def blockstart_tolineno(self) -> int:
-        """The line on which the beginning of this block ends.
-
-        :type: int
-        """
+        """The line on which the beginning of this block ends."""
         if self.bases:
             last_base_lineno: int = self.bases[-1].tolineno
             return last_base_lineno
@@ -2081,7 +2043,6 @@ class ClassDef(
         """A human readable type of this node.
 
         :returns: The type of this node.
-        :rtype: str
         """
         return "Class"
 
@@ -2099,7 +2060,6 @@ class ClassDef(
         """Whether this class is a subtype of the given type.
 
         :param type_name: The name of the type of check against.
-        :type type_name: str
 
         :returns: Whether this class is a subtype of the given type.
         """
@@ -2257,8 +2217,6 @@ class ClassDef(
         """The names of the parent classes
 
         Names are given in the order they appear in the class definition.
-
-        :type: list(str)
         """
         return [bnode.as_string() for bnode in self.bases]
 
@@ -2314,10 +2272,8 @@ class ClassDef(
         """Iterate over the parents that define the given name.
 
         :param name: The name to find definitions for.
-        :type name: str
 
         :returns: The parents that define the given name.
-        :rtype: Iterator[NodeNG]
         """
         # Look up in the mro if we can. This will result in the
         # attribute being looked up just as Python does it.
@@ -2337,11 +2293,9 @@ class ClassDef(
         """Iterate over the parents that define the given name as an attribute.
 
         :param name: The name to find definitions for.
-        :type name: str
 
         :returns: The parents that define the given name as
             an instance attribute.
-        :rtype: Iterator[NodeNG]
         """
         for astroid in self.ancestors(context=context):
             if name in astroid.instance_attrs:
@@ -2351,7 +2305,6 @@ class ClassDef(
         """Whether this class directly inherits from the given node.
 
         :param node: The node to check for.
-        :type node: NodeNG
 
         :returns: Whether this class directly inherits from the given node.
         """
@@ -2365,7 +2318,6 @@ class ClassDef(
         Assignments are looked for in both this class and in parents.
 
         :returns: The list of assignments to the given name.
-        :rtype: list(NodeNG)
 
         :raises AttributeInferenceError: If no attribute with this name
             can be found in this class or parent classes.
@@ -2390,7 +2342,6 @@ class ClassDef(
         Assignments are looked for in both this class and in parents.
 
         :returns: The list of assignments to the given name.
-        :rtype: list(NodeNG)
 
         :raises AttributeInferenceError: If no attribute with this name
             can be found in this class or parent classes.
@@ -2663,7 +2614,6 @@ class ClassDef(
         This is basically looking up the method in the metaclass and calling it.
 
         :returns: The inferred value of a subscript to this class.
-        :rtype: NodeNG
 
         :raises AstroidTypeError: If this class does not define a
             ``__getitem__`` method.
@@ -2721,7 +2671,6 @@ class ClassDef(
         """Iterate over all of the method defined in this class and its parents.
 
         :returns: The methods defined on the class.
-        :rtype: Iterator[FunctionDef]
         """
         done: dict[str, None] = {}
         for astroid in itertools.chain(iter((self,)), self.ancestors()):
@@ -2735,7 +2684,6 @@ class ClassDef(
         """Iterate over all of the method defined in this class only.
 
         :returns: The methods defined on the class.
-        :rtype: Iterator[FunctionDef]
         """
         for member in self.values():
             if isinstance(member, FunctionDef):
@@ -2747,7 +2695,6 @@ class ClassDef(
         This will return an instance of builtins.type.
 
         :returns: The metaclass.
-        :rtype: type
         """
         metaclass = builtin_lookup("type")[1][0]
         assert isinstance(metaclass, ClassDef)
@@ -2902,7 +2849,6 @@ class ClassDef(
             If the class doesn't define any slot, through the ``__slots__``
             variable, then this function will return a None.
             Also, it will return None in the case the slots were not inferred.
-        :rtype: list(str) or None
         """
 
         def grouped_slots(
@@ -3040,7 +2986,6 @@ class ClassDef(
         """Get the method resolution order, using C3 linearization.
 
         :returns: The list of ancestors, sorted by the mro.
-        :rtype: list(NodeNG)
         :raises DuplicateBasesError: Duplicate bases in the same class base
         :raises InconsistentMroError: A class' MRO is inconsistent
         """

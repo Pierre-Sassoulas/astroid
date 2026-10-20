@@ -353,7 +353,6 @@ class BaseContainer(_base_nodes.ParentAssignNode, Instance, metaclass=abc.ABCMet
         """An iterator over the elements this node contains.
 
         :returns: The contents of this node.
-        :rtype: Iterator[NodeNG]
         """
         return self.elts
 
@@ -855,7 +854,6 @@ class Arguments(
         """Get the arguments formatted as string.
 
         :returns: The formatted arguments.
-        :rtype: str
         """
         result = []
         positional_only_defaults = []
@@ -967,7 +965,6 @@ class Arguments(
         """Get the default value for an argument.
 
         :param argname: The name of the argument to get the default value for.
-        :type argname: str
 
         :raises NoDefault: If there is no default value defined for the
             given argument.
@@ -996,7 +993,6 @@ class Arguments(
         """Check if the given name is defined in the arguments.
 
         :param name: The name to check for.
-        :type name: str
 
         :returns: Whether the given name is defined in the arguments,
         """
@@ -1010,10 +1006,8 @@ class Arguments(
         """Get the index and :class:`AssignName` node for given name.
 
         :param argname: The name of the argument to search for.
-        :type argname: str
 
         :returns: The index and node for the argument.
-        :rtype: tuple(str or None, AssignName or None)
         """
         if self.arguments:
             index, argument = _find_arg(argname, self.arguments)
@@ -1895,7 +1889,6 @@ class Compare(NodeNG):
         strings.
 
         :returns: The children.
-        :rtype: Iterator[NodeNG]
         """
         yield self.left
         for _, comparator in self.ops:
@@ -1905,7 +1898,6 @@ class Compare(NodeNG):
         """An optimized version of list(get_children())[-1]
 
         :returns: The last child.
-        :rtype: NodeNG
         """
         # XXX maybe if self.ops:
         return self.ops[-1][1]
@@ -2051,7 +2043,6 @@ class Comprehension(NodeNG):
         """The type of assignment that this node performs.
 
         :returns: The assignment type.
-        :rtype: NodeNG
         """
         return self
 
@@ -2172,7 +2163,6 @@ class Const(_base_nodes.NoChildrenNode, Instance):
         """Get an item from this node if subscriptable.
 
         :param index: The node to use as a subscript index.
-        :type index: Const or Slice
 
         :raises AstroidTypeError: When the given index cannot be used as a
             subscript index, or if this node is not subscriptable.
@@ -2224,7 +2214,6 @@ class Const(_base_nodes.NoChildrenNode, Instance):
         """An iterator over the elements this node contains.
 
         :returns: The contents of this node.
-        :rtype: Iterator[Const]
 
         :raises TypeError: If this node does not represent something that is iterable.
         """
@@ -2245,7 +2234,6 @@ class Const(_base_nodes.NoChildrenNode, Instance):
         """Determine the boolean value of this node.
 
         :returns: The boolean value of this node.
-        :rtype: bool or Uninferable
         """
         # bool(NotImplemented) is deprecated; it raises TypeError starting from Python 3.14
         # and returns True for versions under 3.14
@@ -2461,7 +2449,6 @@ class Dict(NodeNG, Instance):
         code, key first then the value.
 
         :returns: The children.
-        :rtype: Iterator[NodeNG]
         """
         for key, value in self.items:
             yield key
@@ -2471,7 +2458,6 @@ class Dict(NodeNG, Instance):
         """An optimized version of list(get_children())[-1]
 
         :returns: The last child, or None if no children exist.
-        :rtype: NodeNG or None
         """
         if self.items:
             return self.items[-1][1]
@@ -2481,7 +2467,6 @@ class Dict(NodeNG, Instance):
         """An iterator over the keys this node contains.
 
         :returns: The keys of this node.
-        :rtype: Iterator[NodeNG]
         """
         return [key for (key, _) in self.items]
 
@@ -2524,7 +2509,6 @@ class Dict(NodeNG, Instance):
         """Determine the boolean value of this node.
 
         :returns: The boolean value of this node.
-        :rtype: bool
         """
         return bool(self.items)
 
@@ -2730,10 +2714,7 @@ class ExceptHandler(
 
     @cached_property
     def blockstart_tolineno(self) -> int | None:
-        """The line on which the beginning of this block ends.
-
-        :type: int
-        """
+        """The line on which the beginning of this block ends."""
         if self.name:
             return self.name.tolineno
         if self.type:
@@ -2809,10 +2790,7 @@ class For(
 
     @cached_property
     def blockstart_tolineno(self) -> int:
-        """The line on which the beginning of this block ends.
-
-        :type: int
-        """
+        """The line on which the beginning of this block ends."""
         return self.iter.tolineno
 
     def get_children(self) -> Iterator[NodeNG]:
@@ -3116,10 +3094,7 @@ class If(_base_nodes.MultiLineWithElseBlockNode, _base_nodes.Statement):
 
     @cached_property
     def blockstart_tolineno(self) -> int:
-        """The line on which the beginning of this block ends.
-
-        :type: int
-        """
+        """The line on which the beginning of this block ends."""
         return self.test.tolineno
 
     def get_children(self) -> Iterator[NodeNG]:
@@ -3410,7 +3385,6 @@ class List(BaseContainer):
         """Get an item from this node.
 
         :param index: The node to use as a subscript index.
-        :type index: Const or Slice
         """
         return _container_getitem(self, self.elts, index, context=context)
 
@@ -4187,7 +4161,6 @@ class Tuple(BaseContainer):
         """Get an item from this node.
 
         :param index: The node to use as a subscript index.
-        :type index: Const or Slice
         """
         return _container_getitem(self, self.elts, index, context=context)
 
@@ -4579,10 +4552,7 @@ class While(_base_nodes.MultiLineWithElseBlockNode, _base_nodes.Statement):
 
     @cached_property
     def blockstart_tolineno(self) -> int:
-        """The line on which the beginning of this block ends.
-
-        :type: int
-        """
+        """The line on which the beginning of this block ends."""
         return self.test.tolineno
 
     def get_children(self) -> Iterator[NodeNG]:
@@ -4687,17 +4657,13 @@ class With(
 
     @cached_property
     def blockstart_tolineno(self) -> int:
-        """The line on which the beginning of this block ends.
-
-        :type: int
-        """
+        """The line on which the beginning of this block ends."""
         return self.items[-1][0].tolineno
 
     def get_children(self) -> Iterator[NodeNG]:
         """Get the child nodes below this node.
 
         :returns: The children.
-        :rtype: Iterator[NodeNG]
         """
         for expr, var in self.items:
             yield expr
@@ -4823,7 +4789,6 @@ class FormattedValue(NodeNG):
         :param conversion: The type of formatting to be applied to the value.
 
         :param format_spec: The formatting to be applied to the value.
-        :type format_spec: JoinedStr or None
         """
         self.value = value
         self.conversion = conversion
@@ -4915,10 +4880,7 @@ class JoinedStr(NodeNG):
             source code. Note: This is after the last symbol.
         """
         self.values: list[NodeNG] = []
-        """The string expressions to be joined.
-
-        :type: list(FormattedValue or Const)
-        """
+        """The string expressions to be joined."""
 
         super().__init__(
             lineno=lineno,
@@ -4932,8 +4894,6 @@ class JoinedStr(NodeNG):
         """Do some setup after initialisation.
 
         :param value: The string expressions to be joined.
-
-        :type: list(FormattedValue or Const)
         """
         if values is not None:
             self.values = values
@@ -5036,10 +4996,7 @@ class NamedExpr(_base_nodes.AssignTypeNode):
             source code. Note: This is after the last symbol.
         """
         self.target: NodeNG
-        """The assignment target
-
-        :type: Name
-        """
+        """The assignment target"""
 
         self.value: NodeNG
         """The value that gets assigned in the expression"""

@@ -35,7 +35,6 @@ class LocalsDictNodeNG(_base_nodes.LookupMixIn):
         For example: module.name, module.class.name ...
 
         :returns: The qualified name.
-        :rtype: str
         """
         # pylint: disable=no-member; github.com/pylint-dev/astroid/issues/278
         if self.parent is None:
@@ -49,7 +48,6 @@ class LocalsDictNodeNG(_base_nodes.LookupMixIn):
         """The first parent node defining a new scope.
 
         :returns: The first parent scope node.
-        :rtype: Module or FunctionDef or ClassDef or Lambda or GeneratorExp
         """
         return self
 
@@ -150,7 +148,6 @@ class LocalsDictNodeNG(_base_nodes.LookupMixIn):
         """Iterate over the names of locals defined in this scoped node.
 
         :returns: The names of the defined locals.
-        :rtype: Iterator[str]
         """
         return iter(self.keys())
 
@@ -158,7 +155,6 @@ class LocalsDictNodeNG(_base_nodes.LookupMixIn):
         """The names of locals defined in this scoped node.
 
         :returns: The names of the defined locals.
-        :rtype: list(str)
         """
         return list(self.locals.keys())
 
@@ -166,7 +162,6 @@ class LocalsDictNodeNG(_base_nodes.LookupMixIn):
         """The nodes that define the locals in this scoped node.
 
         :returns: The nodes that define locals.
-        :rtype: list(NodeNG)
         """
         # pylint: disable=consider-using-dict-items
         # It look like this class override items/keys/values,
@@ -177,7 +172,6 @@ class LocalsDictNodeNG(_base_nodes.LookupMixIn):
         """Get the names of the locals and the node that defines the local.
 
         :returns: The names of locals and their associated node.
-        :rtype: list(tuple(str, NodeNG))
         """
         return list(zip(self.keys(), self.values()))
 
@@ -185,7 +179,6 @@ class LocalsDictNodeNG(_base_nodes.LookupMixIn):
         """Check if a local is defined in this scope.
 
         :param name: The name of the local to check for.
-        :type name: str
 
         :returns: Whether this node has a local of the given name,
         """

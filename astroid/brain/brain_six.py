@@ -128,10 +128,8 @@ def _six_fail_hook(modname: str) -> nodes.Module:
     for six
 
     :param modname: Name of failed module
-    :type modname: str
 
     :return: An astroid module
-    :rtype: nodes.Module
     """
 
     attribute_of = modname != "six.moves" and modname.startswith("six.moves")

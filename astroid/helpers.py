@@ -263,7 +263,6 @@ def object_len(
 ) -> int:
     """Infer length of given node object.
 
-    :param Union[nodes.ClassDef, nodes.Instance] node:
     :param node: Node to infer length of
 
     :raises AstroidTypeError: If an invalid node is returned
@@ -271,7 +270,7 @@ def object_len(
     :raises InferenceError: If the given node cannot be inferred
         or if multiple nodes are inferred or if the code executed in python
         would result in a infinite recursive check for length
-    :rtype int: Integer length of node
+    :returns: Integer length of node
     """
     # pylint: disable=import-outside-toplevel; circular import
     from astroid.objects import FrozenSet

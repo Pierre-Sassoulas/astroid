@@ -848,9 +848,9 @@ def infer_issubclass(
 ) -> nodes.Const:
     """Infer issubclass() calls.
 
-    :param nodes.Call callnode: an `issubclass` call
-    :param InferenceContext context: the context for the inference
-    :rtype nodes.Const: Boolean Const value of the `issubclass` call
+    :param callnode: an `issubclass` call
+    :param context: the context for the inference
+    :returns: Boolean Const value of the `issubclass` call
     :raises UseInferenceDefault: If the node cannot be inferred
     """
     call = arguments.CallSite.from_call(callnode, context=context)
@@ -895,7 +895,7 @@ def infer_isinstance(
 ) -> nodes.Const:
     """Infer isinstance calls.
 
-    :param nodes.Call callnode: an isinstance call
+    :param callnode: an isinstance call
     :raises UseInferenceDefault: If the node cannot be inferred
     """
     call = arguments.CallSite.from_call(callnode, context=context)
@@ -930,9 +930,9 @@ def infer_isinstance(
 def infer_len(node: nodes.Call, context: InferenceContext | None = None) -> nodes.Const:
     """Infer length calls.
 
-    :param nodes.Call node: len call to infer
-    :param context.InferenceContext: node context
-    :rtype nodes.Const: a Const node with the inferred length, if possible
+    :param node: len call to infer
+    :param context: node context
+    :returns: a Const node with the inferred length, if possible
     """
     call = arguments.CallSite.from_call(node, context=context)
     if call.keyword_arguments:
@@ -953,9 +953,9 @@ def infer_len(node: nodes.Call, context: InferenceContext | None = None) -> node
 def infer_str(node: nodes.Call, context: InferenceContext | None = None) -> nodes.Const:
     """Infer str() calls.
 
-    :param nodes.Call node: str() call to infer
-    :param context.InferenceContext: node context
-    :rtype nodes.Const:
+    :param node: str() call to infer
+    :param context: node context
+    :returns:
         a Const containing a stringified value of str() call if possible, else an empty string
     """
     call = arguments.CallSite.from_call(node, context=context)
@@ -989,9 +989,9 @@ def infer_str(node: nodes.Call, context: InferenceContext | None = None) -> node
 def infer_int(node: nodes.Call, context: InferenceContext | None = None) -> nodes.Const:
     """Infer int() calls.
 
-    :param nodes.Call node: int() call to infer
-    :param context.InferenceContext: node context
-    :rtype nodes.Const: a Const containing the integer value of the int() call
+    :param node: int() call to infer
+    :param context: node context
+    :returns: a Const containing the integer value of the int() call
     """
     call = arguments.CallSite.from_call(node, context=context)
     if call.keyword_arguments:
@@ -1023,9 +1023,9 @@ def infer_dict_fromkeys(
 ) -> nodes.Dict:
     """Infer dict.fromkeys.
 
-    :param nodes.Call node: dict.fromkeys() call to infer
-    :param context.InferenceContext context: node context
-    :rtype nodes.Dict:
+    :param node: dict.fromkeys() call to infer
+    :param context: node context
+    :returns:
         a Dictionary containing the values that astroid was able to infer.
         In case the inference failed for any reason, an empty dictionary
         will be inferred instead.
