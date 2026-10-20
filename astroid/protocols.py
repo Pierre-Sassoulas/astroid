@@ -476,17 +476,15 @@ def sequence_assigned_stmts(
 ) -> Iterator[InferenceResult]:
     if assign_path is None:
         assign_path = []
-    try:
-        index = self.elts.index(node)  # type: ignore[arg-type]
-    except ValueError as exc:
+    if node is None or node not in self.elts:
         raise InferenceError(
             "Tried to retrieve a node {node!r} which does not exist",
             node=self,
             assign_path=assign_path,
             context=context,
-        ) from exc
+        )
 
-    assign_path.insert(0, index)
+    assign_path.insert(0, self.elts.index(node))
     # The parent of an assignment target is the assigning statement
     return self.parent.assigned_stmts(  # type: ignore[union-attr, no-any-return]
         node=self, context=context, assign_path=assign_path
