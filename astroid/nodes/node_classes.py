@@ -85,13 +85,15 @@ InferUnaryOp = Callable[[_NodesT, str], ConstFactoryResult]
 
 
 @decorators.raise_if_nothing_inferred
-def unpack_infer(stmt, context: InferenceContext | None = None):
+def unpack_infer(
+    stmt: SuccessfulInferenceResult, context: InferenceContext | None = None
+) -> Generator[InferenceResult, None, InferenceErrorInfo]:
     """recursively generate nodes inferred by the given statement.
     If the inferred value is a list or a tuple, recurse on the elements
     """
     if isinstance(stmt, (List, Tuple)):
         for elt in stmt.elts:
-            if elt is util.Uninferable:
+            if isinstance(elt, util.UninferableBase):
                 yield elt
                 continue
             yield from unpack_infer(elt, context)
@@ -111,7 +113,11 @@ def unpack_infer(stmt, context: InferenceContext | None = None):
     return {"node": stmt, "context": context}
 
 
-def are_exclusive(stmt1, stmt2, exceptions: list[str] | None = None) -> bool:
+def are_exclusive(
+    stmt1: InferenceResult,
+    stmt2: InferenceResult,
+    exceptions: list[str] | None = None,
+) -> bool:
     """return true if the two given statements are mutually exclusive
 
     `exceptions` may be a list of exception names. If specified, discard If
@@ -125,9 +131,9 @@ def are_exclusive(stmt1, stmt2, exceptions: list[str] | None = None) -> bool:
         in exclusive branches
     """
     # index stmt1's parents
-    stmt1_parents = {}
-    children = {}
-    previous = stmt1
+    stmt1_parents: dict[NodeNG | Proxy, int] = {}
+    children: dict[NodeNG | Proxy, InferenceResult] = {}
+    previous: InferenceResult = stmt1
     for node in stmt1.node_ancestors():
         stmt1_parents[node] = 1
         children[node] = previous
@@ -155,12 +161,14 @@ def are_exclusive(stmt1, stmt2, exceptions: list[str] | None = None) -> bool:
                     first_in_body_caught_by_handlers = (
                         c2attr == "handlers"
                         and c1attr == "body"
+                        and isinstance(previous, ExceptHandler)
                         and previous.catch(exceptions)
                     )
                     second_in_body_caught_by_handlers = (
                         c2attr == "body"
                         and c1attr == "handlers"
-                        and children[node].catch(exceptions)
+                        and isinstance(child := children[node], ExceptHandler)
+                        and child.catch(exceptions)
                     )
                     first_in_else_other_in_handlers = (
                         c2attr == "handlers" and c1attr == "orelse"
@@ -261,8 +269,9 @@ def _container_getitem(
             new_cls.parent = instance.parent
             return new_cls
         if isinstance(index, Const):
-            item: InferenceResult = elts[index.value]
-            return item
+            # A non-int value makes the subscript raise TypeError below
+            position: int = index.value
+            return elts[position]
     except ValueError as exc:
         raise AstroidValueError(
             message="Slice {index!r} cannot index container",
@@ -849,7 +858,7 @@ class Arguments(
 
         :returns: The formatted arguments.
         """
-        result = []
+        result: list[str] = []
         positional_only_defaults = []
         positional_or_keyword_defaults = self.defaults
         if self.defaults:
@@ -1442,7 +1451,7 @@ class AugAssign(
 
         If any inferred result is uninferable, an empty list is returned.
         """
-        bad = []
+        bad: list[util.BadBinaryOperationMessage] = []
         try:
             for result in self._infer_augassign(context=context):
                 if result is util.Uninferable:
@@ -1844,8 +1853,7 @@ class Call(NodeNG):
                 context_lookup[arg.value] = context
             else:
                 context_lookup[arg] = context
-        keywords = self.keywords if self.keywords is not None else []
-        for keyword in keywords:
+        for keyword in self.keywords:
             context_lookup[keyword.value] = context
         return context_lookup
 
@@ -2059,10 +2067,10 @@ class Comprehension(NodeNG):
     def _get_filtered_stmts(
         self,
         lookup_node: NodeNG,
-        node: NodeNG,
-        stmts: list[NodeNG],
+        node: InferenceResult,
+        stmts: list[InferenceResult],
         mystmt: NodeNG | None,
-    ) -> tuple[list[NodeNG], bool]:
+    ) -> tuple[list[InferenceResult], bool]:
         """method used in filter_stmts"""
         if self is mystmt:
             if isinstance(lookup_node, (Const, Name)):
@@ -2156,7 +2164,7 @@ class Const(_base_nodes.NoChildrenNode, Instance):
     infer_unary_op = protocols.const_infer_unary_op
     infer_binary_op = protocols.const_infer_binary_op
 
-    def __getattr__(self, name):
+    def __getattr__(self, name: str) -> Any:  # type: ignore[explicit-any]
         # This is needed because of Proxy's __getattr__ method.
         # Calling object.__new__ on this class without calling
         # __init__ would result in an infinite loop otherwise
@@ -3780,7 +3788,6 @@ class Subscript(NodeNG):
     <Subscript l.1 at 0x...>
     """
 
-    _SUBSCRIPT_SENTINEL = object()
     _astroid_fields = ("value", "slice")
     _other_fields = ("ctx",)
 
@@ -3845,7 +3852,7 @@ class Subscript(NodeNG):
                     return None
 
                 # Try to deduce the index value.
-                index_value = self._SUBSCRIPT_SENTINEL
+                index_value: SuccessfulInferenceResult | None = None
                 if value.__class__ == Instance:
                     index_value = index
                 # The exact class on purpose, like the __class__ check above.
@@ -3856,7 +3863,7 @@ class Subscript(NodeNG):
                 else:
                     index_value = index
 
-                if index_value is self._SUBSCRIPT_SENTINEL:
+                if index_value is None:
                     raise InferenceError(node=self, context=context)
 
                 if not isinstance(
@@ -4445,7 +4452,7 @@ class UnaryOp(_base_nodes.OperatorNode):
 
         If any inferred result is uninferable, an empty list is returned.
         """
-        bad = []
+        bad: list[util.BadUnaryOperationMessage] = []
         try:
             for result in self._infer_unaryop(context=context):
                 if result is util.Uninferable:
@@ -4471,7 +4478,9 @@ class UnaryOp(_base_nodes.OperatorNode):
         """Infer what an UnaryOp should return when evaluated."""
         # pylint: disable-next=import-outside-toplevel
         from astroid import objects
-        from astroid.nodes import ClassDef  # pylint: disable=import-outside-toplevel
+
+        # pylint: disable-next=import-outside-toplevel
+        from astroid.nodes import ClassDef, FunctionDef, Lambda
 
         for operand in self.operand.infer(context):
             if isinstance(
@@ -4511,7 +4520,9 @@ class UnaryOp(_base_nodes.OperatorNode):
                         yield util.BadUnaryOperationMessage(
                             operand,
                             self.op,
-                            AttributeInferenceError(target=operand, attribute=method_name),
+                            AttributeInferenceError(
+                                target=operand, attribute=method_name
+                            ),
                         )
                         continue
 
@@ -4532,6 +4543,10 @@ class UnaryOp(_base_nodes.OperatorNode):
                             or not inferred.callable()
                         ):
                             continue
+                        # Only functions, classes and instances are callable
+                        assert isinstance(
+                            inferred, (Proxy, Lambda, FunctionDef, ClassDef)
+                        )
 
                         context = copy_context(context)
                         context.boundnode = operand

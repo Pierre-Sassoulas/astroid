@@ -11,13 +11,10 @@ It is not considered public.
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import TYPE_CHECKING
 
 from astroid import nodes
-from astroid.typing import InferenceResult
-
-if TYPE_CHECKING:
-    from astroid.nodes import _base_nodes
+from astroid.nodes import _base_nodes
+from astroid.typing import InferenceResult, SuccessfulInferenceResult
 
 
 def _get_filtered_node_statements(
@@ -48,7 +45,7 @@ def _get_if_statement_ancestor(node: nodes.NodeNG) -> nodes.If | None:
     return None
 
 
-def _filter_stmts(
+def _filter_stmts(  # pyright: ignore[reportUnusedFunction] # used by LocalsDictNodeNG
     base_node: _base_nodes.LookupMixIn,
     stmts: Sequence[InferenceResult],
     frame: nodes.LocalsDictNodeNG,
@@ -105,15 +102,14 @@ def _filter_stmts(
     #
     # take care node may be missing lineno information (this is the case for
     # nodes inserted for living objects)
-    if myframe is frame and mystmt and mystmt.fromlineno is not None:
-        assert mystmt.fromlineno is not None, mystmt
+    if myframe is frame and mystmt:
         mylineno = mystmt.fromlineno + offset
     else:
         # disabling lineno filtering
         mylineno = 0
 
     _stmts: list[InferenceResult] = []
-    _stmt_parents = []
+    _stmt_parents: list[SuccessfulInferenceResult | None] = []
     statements = _get_filtered_node_statements(base_node, stmts)
     for node, stmt in statements:
         # line filtering is on and we have reached our location, break
@@ -132,7 +128,7 @@ def _filter_stmts(
             _stmts.append(node)
             continue
 
-        assign_type = node.assign_type()
+        assign_type = _base_nodes.assign_type_of(node)
         _stmts, done = assign_type._get_filtered_stmts(base_node, node, _stmts, mystmt)
         if done:
             break
@@ -171,7 +167,7 @@ def _filter_stmts(
         else:
             # we got a parent index, this means the currently visited node
             # is at the same block level as a previously visited node
-            if _stmts[pindex].assign_type().parent_of(assign_type):
+            if _base_nodes.assign_type_of(_stmts[pindex]).parent_of(assign_type):
                 # both statements are not at the same block level
                 continue
             # if currently visited node is following previously considered

@@ -692,8 +692,6 @@ class AsStringVisitor:
 
     def visit_matchclass(self, node: nodes.MatchClass) -> str:
         """Return an nodes..MatchClass node as string."""
-        if node.cls is None:
-            raise AssertionError(f"{node} does not have a 'cls' node")
         class_strings: list[str] = []
         if node.patterns:
             class_strings.extend(p.accept(self) for p in node.patterns)
@@ -719,8 +717,6 @@ class AsStringVisitor:
 
     def visit_matchor(self, node: nodes.MatchOr) -> str:
         """Return an nodes.MatchOr node as string."""
-        if node.patterns is None:
-            raise AssertionError(f"{node} does not have pattern nodes")
         return " | ".join(p.accept(self) for p in node.patterns)
 
     def visit_templatestr(self, node: nodes.TemplateStr) -> str:
@@ -787,7 +783,7 @@ def _escaped_fstring_literal(value: str, quote: str) -> str:
 
 def _import_string(names: list[tuple[str, str | None]]) -> str:
     """return a list of (name, asname) formatted as a string"""
-    _names = []
+    _names: list[str] = []
     for name, asname in names:
         if asname is not None:
             _names.append(f"{name} as {asname}")
