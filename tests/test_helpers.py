@@ -10,7 +10,11 @@ import pytest
 from astroid import builder, helpers, manager, nodes, raw_building, util
 from astroid.builder import AstroidBuilder
 from astroid.const import IS_PYPY, PY312_PLUS
-from astroid.exceptions import InferenceError, _NonDeducibleTypeHierarchy
+from astroid.exceptions import (
+    AstroidTypeError,
+    InferenceError,
+    _NonDeducibleTypeHierarchy,
+)
 
 
 class TestHelpers(unittest.TestCase):
@@ -358,3 +362,25 @@ def test_object_type_pep695_type_params() -> None:
         assign = builder.extract_node(code)
         type_param_name = assign.type_params[0].name
         assert helpers.object_type(type_param_name) is util.Uninferable
+
+
+def test_object_len_dunder_len_not_callable() -> None:
+    """A ``__len__`` bound to a node that cannot be called is a type error."""
+    node = builder.extract_node("""
+    import os
+    class Cls:
+        __len__ = os
+    Cls()  #@
+    """)
+    with pytest.raises(AstroidTypeError):
+        helpers.object_len(node)
+
+
+def test_object_len_dunder_len_uninferable() -> None:
+    node = builder.extract_node("""
+    class Cls:
+        __len__ = unknown
+    Cls()  #@
+    """)
+    with pytest.raises(InferenceError):
+        helpers.object_len(node)

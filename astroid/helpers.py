@@ -304,7 +304,7 @@ def object_len(
         return len(inferred_node.items)
 
     node_type = object_type(inferred_node, context=context)
-    if not node_type:
+    if not isinstance(node_type, nodes.ClassDef):
         raise InferenceError(node=node)
 
     try:
@@ -316,9 +316,13 @@ def object_len(
             f"object of type '{node_type.pytype()}' has no len()"
         ) from e
 
-    inferred = len_call.infer_call_result(node, context)
-    if isinstance(inferred, util.UninferableBase):
+    if isinstance(len_call, util.UninferableBase):
         raise InferenceError(node=node, context=context)
+    if not isinstance(len_call, (bases.Proxy, nodes.ClassDef, nodes.Lambda)):
+        raise AstroidTypeError(
+            f"'__len__' of type '{node_type.pytype()}' is not callable"
+        )
+    inferred = len_call.infer_call_result(node, context)
     result_of_len = next(inferred, None)
     if (
         isinstance(result_of_len, nodes.Const)
