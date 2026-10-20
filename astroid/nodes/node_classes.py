@@ -1852,8 +1852,7 @@ class Call(NodeNG):
                 context_lookup[arg.value] = context
             else:
                 context_lookup[arg] = context
-        keywords = self.keywords if self.keywords is not None else []
-        for keyword in keywords:
+        for keyword in self.keywords:
             context_lookup[keyword.value] = context
         return context_lookup
 

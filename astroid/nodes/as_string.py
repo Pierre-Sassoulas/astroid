@@ -692,8 +692,6 @@ class AsStringVisitor:
 
     def visit_matchclass(self, node: nodes.MatchClass) -> str:
         """Return an nodes..MatchClass node as string."""
-        if node.cls is None:
-            raise AssertionError(f"{node} does not have a 'cls' node")
         class_strings: list[str] = []
         if node.patterns:
             class_strings.extend(p.accept(self) for p in node.patterns)
@@ -719,8 +717,6 @@ class AsStringVisitor:
 
     def visit_matchor(self, node: nodes.MatchOr) -> str:
         """Return an nodes.MatchOr node as string."""
-        if node.patterns is None:
-            raise AssertionError(f"{node} does not have pattern nodes")
         return " | ".join(p.accept(self) for p in node.patterns)
 
     def visit_templatestr(self, node: nodes.TemplateStr) -> str:

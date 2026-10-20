@@ -102,8 +102,7 @@ def _filter_stmts(
     #
     # take care node may be missing lineno information (this is the case for
     # nodes inserted for living objects)
-    if myframe is frame and mystmt and mystmt.fromlineno is not None:
-        assert mystmt.fromlineno is not None, mystmt
+    if myframe is frame and mystmt:
         mylineno = mystmt.fromlineno + offset
     else:
         # disabling lineno filtering
