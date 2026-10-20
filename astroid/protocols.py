@@ -708,6 +708,8 @@ def _unwrap_typing_wrapper(node: nodes.NodeNG) -> nodes.NodeNG:
             wrapper = next(node.value.infer())
         except (InferenceError, StopIteration):
             break
+        if not isinstance(wrapper, (nodes.LocalsDictNodeNG, bases.Proxy)):
+            break
         wrapper_qname = wrapper.qname()
         if wrapper_qname not in _TYPING_WRAPPERS:
             break

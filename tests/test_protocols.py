@@ -820,3 +820,8 @@ def test_for_loop_unpacking_skips_getitem_inferring_nothing() -> None:
     """)
     with mock.patch.object(Instance, "getitem", return_value=None):
         assert node.inferred() == [Uninferable]
+
+
+def test_unwrap_typing_wrapper_stops_at_value_without_qname() -> None:
+    node = extract_node("x: slice(1)[int]")
+    assert protocols._unwrap_typing_wrapper(node.annotation) is node.annotation
