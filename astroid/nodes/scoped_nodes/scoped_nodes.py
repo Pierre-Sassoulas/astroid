@@ -1006,7 +1006,7 @@ class Lambda(_base_nodes.FilterStmtsBaseNode, LocalsDictNodeNG):
             return "Method"
         return "Function"
 
-    def callable(self) -> Literal[True]:
+    def callable(self) -> bool:
         """Whether this node defines something that is callable.
 
         :returns: Whether this defines something that is callable
@@ -1315,7 +1315,7 @@ class FunctionDef(
             return "Method"
         return "Function"
 
-    def callable(self) -> Literal[True]:
+    def callable(self) -> bool:
         return True
 
     def argnames(self) -> list[str]:
