@@ -134,6 +134,8 @@ class CallSite:
         args: Iterable[SuccessfulInferenceResult],
         context: InferenceContext | None = None,
     ) -> list[InferenceResult]:
+        from astroid import objects  # pylint: disable=import-outside-toplevel
+
         values: list[InferenceResult] = []
         context = context or InferenceContext()
         context.extra_context = self.argument_context_map
@@ -143,8 +145,16 @@ class CallSite:
                 if isinstance(inferred, UninferableBase):
                     values.append(Uninferable)
                     continue
-                # Only containers (list, tuple, set...) have elements
-                if not isinstance(inferred, nodes.BaseContainer):
+                # Only containers (list, tuple, set...) and dict views have elements
+                if not isinstance(
+                    inferred,
+                    (
+                        nodes.BaseContainer,
+                        objects.DictItems,
+                        objects.DictKeys,
+                        objects.DictValues,
+                    ),
+                ):
                     values.append(Uninferable)
                     continue
                 values.extend(inferred.elts)

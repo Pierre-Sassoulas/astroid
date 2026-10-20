@@ -1057,3 +1057,28 @@ def test_delayed_assattr_without_namespace() -> None:
     assert "apple" not in module["fill"].locals
     lambda_node = next(module.nodes_of_class(nodes.Lambda))
     assert "banana" in lambda_node.locals
+
+
+def test_attribute_assignment_on_bound_method() -> None:
+    """Assigning an attribute on a bound method records nothing."""
+    module = builder.parse("""
+    class A:
+        def method(self):
+            pass
+    A().method.x = 1
+    """)
+    method = module["A"]["method"]
+    assert "x" not in method.instance_attrs
+    assert "x" not in method.locals
+
+
+@pytest.mark.skipif(not PY312_PLUS, reason="Requires PEP 695 type parameters")
+def test_attribute_assignment_on_type_parameter() -> None:
+    """A type parameter has no locals: assigning an attribute on it records nothing."""
+    module = builder.parse("""
+    def func[T]():
+        T.x = 1
+    """)
+    type_param = module["func"].type_params[0]
+    assert isinstance(type_param, nodes.TypeVar)
+    assert "x" not in module["func"].locals

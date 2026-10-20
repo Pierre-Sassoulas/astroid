@@ -75,5 +75,11 @@ class StatisticsBrainTest(unittest.TestCase):
         self.assertNotEqual(len(inferred), 0)
 
 
+def test_quantiles_name_in_lambda_is_not_statistics_quantiles() -> None:
+    """The name check looks for an import in the frame, and a lambda has no body list."""
+    node = extract_node("lambda quantiles: quantiles([1, 2])  #@")
+    assert next(node.body.infer()) is Uninferable
+
+
 if __name__ == "__main__":
     unittest.main()

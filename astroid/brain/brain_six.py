@@ -198,22 +198,29 @@ def _looks_like_nested_from_six_with_metaclass(node: nodes.ClassDef) -> bool:
     base = node.bases[0]
     if not isinstance(base, nodes.Call):
         return False
-    match base.func:
-        case nodes.Attribute(expr=nodes.Name(name=mod), attrname=attrname):
-            # format when explicit 'six.with_metaclass' is used
-            func = f"{mod}.{attrname}"
-        case nodes.Name(name=name) if isinstance(node.parent, nodes.LocalsDictNodeNG):
-            # format when 'with_metaclass' is used directly (local import from six)
-            # check reference module to avoid 'with_metaclass' name clashes
-            try:
-                import_from = node.parent.locals["with_metaclass"][0]
-            except KeyError:
-                return False
-            if not isinstance(import_from, nodes.ImportFrom):
-                return False
-            func = f"{import_from.modname}.{name}"
-        case _:
+    if isinstance(base.func, nodes.Attribute):
+        # format when explicit 'six.with_metaclass' is used
+        if not isinstance(base.func.expr, nodes.Name):
             return False
+        mod = base.func.expr.name
+        func = base.func.attrname
+        func = f"{mod}.{func}"
+    elif isinstance(base.func, nodes.Name):
+        # format when 'with_metaclass' is used directly (local import from six)
+        # check reference module to avoid 'with_metaclass' name clashes
+        # ``base`` is a base of ``node``, so its grandparent is ``node.parent``
+        scope = node.parent
+        if not isinstance(scope, nodes.LocalsDictNodeNG):
+            return False
+        try:
+            import_from = scope.locals["with_metaclass"][0]
+        except (KeyError, IndexError):
+            return False
+        if not isinstance(import_from, nodes.ImportFrom):
+            return False
+        func = f"{import_from.modname}.{base.func.name}"
+    else:
+        return False
     return func == SIX_WITH_METACLASS
 
 

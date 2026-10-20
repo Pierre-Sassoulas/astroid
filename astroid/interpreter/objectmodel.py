@@ -84,11 +84,9 @@ def _dunder_dict(
 def _get_bound_node(
     model: ObjectModel[SuccessfulInferenceResult],
 ) -> SuccessfulInferenceResult:
-    # Proxies, but also some nodes such as Const or Super, expose the class they
-    # stand for as ``_proxied``: they have no common base class to check against.
-    instance = model._instance
-    bound: SuccessfulInferenceResult = getattr(instance, "_proxied", instance)
-    return bound
+    if isinstance(model._instance, bases.Proxy):
+        return model._instance._proxied
+    return model._instance
 
 
 def _builtins_class(name: str) -> nodes.ClassDef:
@@ -277,7 +275,7 @@ class ModuleModel(ObjectModel["nodes.Module"]):
     @property
     def attr___doc__(self) -> node_classes.Const:
         return node_classes.Const(
-            value=getattr(self._instance.doc_node, "value", None),
+            value=self._instance.doc_node.value if self._instance.doc_node else None,
             parent=self._instance,
         )
 
@@ -335,7 +333,7 @@ class BaseFunctionModel(ObjectModel[_FunctionT_co]):
         # A lambda has no docstring.
         doc_node = None if isinstance(func, nodes.Lambda) else func.doc_node
         return node_classes.Const(
-            value=getattr(doc_node, "value", None),
+            value=doc_node.value if doc_node else None,
             parent=func,
         )
 
@@ -489,7 +487,11 @@ class BaseFunctionModel(ObjectModel[_FunctionT_co]):
                 caller: SuccessfulInferenceResult | None,
                 context: InferenceContext | None = None,
             ) -> Iterator[bases.BoundMethod]:
-                if len(caller.args) > 2 or len(caller.args) < 1:
+                if (
+                    not isinstance(caller, nodes.Call)
+                    or len(caller.args) > 2
+                    or len(caller.args) < 1
+                ):
                     raise InferenceError(
                         "Invalid arguments for descriptor binding",
                         target=self,
@@ -630,7 +632,8 @@ class ClassModel(ObjectModel["nodes.ClassDef"]):
 
     @property
     def attr___doc__(self) -> node_classes.Const:
-        return node_classes.Const(getattr(self._instance.doc_node, "value", None))
+        doc_node = self._instance.doc_node
+        return node_classes.Const(doc_node.value if doc_node else None)
 
     @property
     def attr___mro__(self) -> node_classes.Tuple:
@@ -857,7 +860,11 @@ class GeneratorBaseModel(
     @property
     def attr___doc__(self) -> node_classes.Const:
         return node_classes.Const(
-            value=getattr(self._instance.parent.doc_node, "value", None),
+            value=(
+                self._instance.parent.doc_node.value
+                if self._instance.parent.doc_node
+                else None
+            ),
             parent=self._instance,
         )
 
@@ -883,7 +890,8 @@ class InstanceModel(ObjectModel["bases.Instance"]):
 
     @property
     def attr___doc__(self) -> node_classes.Const:
-        return node_classes.Const(getattr(self._instance.doc_node, "value", None))
+        doc_node = self._instance.doc_node
+        return node_classes.Const(doc_node.value if doc_node else None)
 
     @property
     def attr___dict__(self) -> node_classes.Dict:
@@ -1077,7 +1085,9 @@ class PropertyModel(ObjectModel["Property"]):
                 context: InferenceContext | None = None,
             ) -> Iterator[InferenceResult]:
                 nonlocal func
-                if caller and len(caller.args) != 1:
+                if caller and (
+                    not isinstance(caller, nodes.Call) or len(caller.args) != 1
+                ):
                     raise InferenceError(
                         "fget() needs a single argument", target=self, context=context
                     )
@@ -1129,7 +1139,9 @@ class PropertyModel(ObjectModel["Property"]):
                 caller: SuccessfulInferenceResult | None,
                 context: InferenceContext | None = None,
             ) -> Iterator[InferenceResult]:
-                if caller and len(caller.args) != 2:
+                if caller and (
+                    not isinstance(caller, nodes.Call) or len(caller.args) != 2
+                ):
                     raise InferenceError(
                         "fset() needs two arguments", target=self, context=context
                     )

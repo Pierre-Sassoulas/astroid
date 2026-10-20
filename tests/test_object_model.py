@@ -1204,3 +1204,57 @@ def test_getattr_on_property_fset_with_annassign_does_not_crash() -> None:
             getattr(Base.x, "fset", None)  #@
     """)
     next(node.infer())
+
+
+def _infer_property_accessors() -> tuple[nodes.FunctionDef, nodes.FunctionDef]:
+    node = builder.extract_node("""
+    class Base:
+        @property
+        def x(self):
+            return 1
+        @x.setter
+        def x(self, value):
+            pass
+    Base.x #@
+    """)
+    prop = next(node.infer())
+    return next(prop.igetattr("fget")), next(prop.igetattr("fset"))
+
+
+def _infer_instance() -> bases.Instance:
+    node = builder.extract_node("""
+    class A:
+        pass
+    A() #@
+    """)
+    return next(node.infer())
+
+
+def test_property_fget_called_without_caller() -> None:
+    fget, _ = _infer_property_accessors()
+    inferred = list(fget.infer_call_result(None))
+    assert len(inferred) == 1
+    assert isinstance(inferred[0], nodes.Const)
+    assert inferred[0].value == 1
+
+
+def test_property_accessors_called_with_a_caller_that_is_not_a_call() -> None:
+    """Used as property getters, they get the instance as ``caller``."""
+    fget, fset = _infer_property_accessors()
+    instance = _infer_instance()
+    with pytest.raises(InferenceError):
+        list(fget.infer_call_result(instance))
+    with pytest.raises(InferenceError):
+        list(fset.infer_call_result(instance))
+
+
+def test_descriptor_get_called_with_a_caller_that_is_not_a_call() -> None:
+    node = builder.extract_node("""
+    class A:
+        def f(self):
+            pass
+    A.f.__get__ #@
+    """)
+    descriptor_get = next(node.infer())
+    with pytest.raises(InferenceError):
+        list(descriptor_get.infer_call_result(_infer_instance()))

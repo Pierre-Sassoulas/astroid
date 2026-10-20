@@ -732,3 +732,67 @@ class StubAnnotationInferenceTest(unittest.TestCase):
         inferred = list(ann.assigned_stmts())
         assert len(inferred) == 1
         assert inferred[0] is Uninferable
+
+
+def test_for_loop_unpacking_of_non_iterable_is_uninferable() -> None:
+    node = extract_node("""
+    def func():
+        pass
+    for a, b in func:
+        a #@
+    """)
+    assert node.inferred() == [Uninferable]
+
+
+def test_for_loop_unpacking_skips_elements_that_cannot_be_subscripted() -> None:
+    node = extract_node("""
+    def func():
+        pass
+    for a, b in [(1, 2), func()]:
+        a #@
+    """)
+    inferred = node.inferred()
+    assert len(inferred) == 1
+    assert isinstance(inferred[0], nodes.Const)
+    assert inferred[0].value == 1
+
+
+def test_for_loop_starred_unpacking_stops_at_non_iterable_element() -> None:
+    node = extract_node("""
+    def func():
+        pass
+    for a, *b in [func, func]:
+        b #@
+    """)
+    inferred = next(node.infer())
+    assert isinstance(inferred, nodes.List)
+    assert not inferred.elts
+
+
+def test_bool_value_with_special_method_bound_to_module() -> None:
+    node = extract_node("""
+    import os
+    class A:
+        __bool__ = os
+    A() #@
+    """)
+    inferred = next(node.infer())
+    assert inferred.bool_value() is Uninferable
+
+
+def test_for_loop_unpacking_with_missing_index_is_skipped() -> None:
+    node = extract_node("""
+    for a, b in [(1,), (2, 3)]:
+        b #@
+    """)
+    inferred = node.inferred()
+    assert len(inferred) == 1
+    assert inferred[0].value == 3
+
+
+def test_async_comprehension_target_is_uninferable() -> None:
+    node = extract_node("""
+    async def func(values):
+        return [__(value) async for value in values]
+    """)
+    assert node.inferred() == [Uninferable]

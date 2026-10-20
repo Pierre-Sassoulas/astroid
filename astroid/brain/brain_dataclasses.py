@@ -656,7 +656,10 @@ def _is_init_var(node: nodes.NodeNG) -> bool:
     except (InferenceError, StopIteration):
         return False
 
-    return getattr(inferred, "name", "") == "InitVar"
+    return (
+        isinstance(inferred, (bases.Proxy, nodes.ClassDef, nodes.FunctionDef))
+        and inferred.name == "InitVar"
+    )
 
 
 def register(manager: AstroidManager) -> None:

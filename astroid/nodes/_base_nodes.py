@@ -171,7 +171,7 @@ class ImportNode(FilterStmtsBaseNode, NoChildrenNode, Statement):
     def do_import_module(self, modname: str | None = None) -> nodes.Module:
         """Return the ast for a module whose name is <modname> imported by <self>."""
         mymodule = self.root()
-        level: int | None = getattr(self, "level", None)  # Import has no level
+        level = self.level if isinstance(self, nodes.ImportFrom) else None
         if modname is None:
             modname = self.modname
         # If the module ImportNode is importing is a module with the same name
@@ -716,6 +716,10 @@ class OperatorNode(NodeNG):
             try:
                 results = list(method())
             except AttributeError:
+                # Safety net, not a type check: the dunder method is called with
+                # the operand instance as ``caller``, and some ``infer_call_result``
+                # implementations read ``caller.args`` unguarded, e.g. a metaclass
+                # used as ``__add__ = type``.
                 continue
             except AttributeInferenceError:
                 continue

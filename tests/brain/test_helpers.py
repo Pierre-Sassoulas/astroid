@@ -6,6 +6,7 @@ import pytest
 
 from astroid import Uninferable, extract_node, nodes, parse
 from astroid.brain.helpers import is_class_var, register_module_extender
+from astroid.manager import AstroidManager
 
 
 @pytest.mark.parametrize(
@@ -77,6 +78,14 @@ def test_is_class_var_returns_true(code):
             """,
             id="missing-import",
         ),
+        pytest.param(
+            """
+            import os
+
+            foo: os
+            """,
+            id="module-annotation",
+        ),
     ],
 )
 def test_is_class_var_returns_false(code):
@@ -101,3 +110,18 @@ def test_register_module_extender_does_not_reparent_non_node_locals() -> None:
     transforms[0](module)
     assert module.locals["f"][0].parent is module
     assert module.locals["y"] == [Uninferable]
+
+
+def test_module_named_class_var_is_not_a_class_var() -> None:
+    """Only a class, a function or an instance named ``ClassVar`` is matched."""
+    manager = AstroidManager()
+    manager.astroid_cache["ClassVar"] = parse("", module_name="ClassVar")
+    try:
+        node = extract_node("""
+        import ClassVar
+
+        foo: ClassVar
+        """)
+        assert not is_class_var(node.annotation)
+    finally:
+        del manager.astroid_cache["ClassVar"]

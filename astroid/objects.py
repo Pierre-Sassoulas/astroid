@@ -107,7 +107,11 @@ class Super(NodeNG):
             self._class_based = True
             mro_type = self.type
         else:
-            mro_type = getattr(self.type, "_proxied", None)
+            mro_type = (
+                self.type._proxied
+                if isinstance(self.type, (bases.Proxy, node_classes.Slice, Super))
+                else None
+            )
             if not isinstance(mro_type, (bases.Instance, scoped_nodes.ClassDef)):
                 raise SuperError(
                     "The second argument to super must be an "

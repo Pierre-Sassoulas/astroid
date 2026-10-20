@@ -6,10 +6,11 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
+from astroid.bases import Proxy
 from astroid.exceptions import InferenceError
 from astroid.manager import AstroidManager
 from astroid.nodes.node_ng import NodeNG
-from astroid.nodes.scoped_nodes import Module
+from astroid.nodes.scoped_nodes import ClassDef, FunctionDef, Module
 
 
 def register_module_extender(
@@ -142,4 +143,7 @@ def is_class_var(node: NodeNG) -> bool:
     except (InferenceError, StopIteration):
         return False
 
-    return getattr(inferred, "name", "") == "ClassVar"
+    return (
+        isinstance(inferred, (Proxy, ClassDef, FunctionDef))
+        and inferred.name == "ClassVar"
+    )

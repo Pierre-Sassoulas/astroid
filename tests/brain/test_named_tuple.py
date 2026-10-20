@@ -358,3 +358,11 @@ class NamedTupleTest(unittest.TestCase):
         assert isinstance(good_node_two_inferred, nodes.ClassDef)
         bad_node_inferred = next(bad_node.infer())
         assert bad_node_inferred == util.Uninferable
+
+
+def test_namedtuple_with_field_name_that_is_not_a_constant() -> None:
+    node = builder.extract_node("""
+    from collections import namedtuple
+    namedtuple("Point", [(int, 1)]) #@
+    """)
+    assert next(node.infer()) is util.Uninferable

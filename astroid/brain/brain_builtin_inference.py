@@ -12,7 +12,7 @@ from collections.abc import Callable, Iterable, Iterator
 from functools import lru_cache, partial
 from typing import TYPE_CHECKING, NoReturn, Protocol, TypeGuard, cast
 
-from astroid import arguments, helpers, nodes, objects, util
+from astroid import arguments, bases, helpers, nodes, objects, util
 from astroid.bases import Instance
 from astroid.builder import AstroidBuilder
 from astroid.context import InferenceContext
@@ -235,10 +235,6 @@ def _builtin_filter_predicate(node: nodes.Call, builtin_name: str) -> bool:
     return False
 
 
-_IGetattr = Callable[[str, InferenceContext | None], Iterator[InferenceResult]]
-_Getattr = Callable[[str, InferenceContext | None], object]
-
-
 class _BuiltinTransform(Protocol):
     def __call__(
         self, node: nodes.Call, /, *, context: InferenceContext | None
@@ -269,7 +265,7 @@ def register_builtin_transform(
                 result.lineno = node.lineno
             # Can be a 'Module' see https://github.com/pylint-dev/pylint/issues/4671
             # We don't have a regression test on this one: tread carefully
-            if hasattr(result, "col_offset") and result.col_offset is None:
+            if result.col_offset is None:
                 result.col_offset = node.col_offset
         return iter([result])
 
@@ -637,17 +633,25 @@ def infer_getattr(
     lookup will be done.
     """
     obj, attr = _infer_getattr_args(node, context)
-    # Many unrelated node classes and proxies provide igetattr()
-    igetattr: _IGetattr | None = getattr(obj, "igetattr", None)
     if (
         isinstance(obj, util.UninferableBase)
         or isinstance(attr, util.UninferableBase)
-        or igetattr is None
+        or not isinstance(
+            obj,
+            (
+                bases.Proxy,
+                nodes.ClassDef,
+                nodes.FunctionDef,
+                nodes.Module,
+                nodes.Slice,
+                objects.Super,
+            ),
+        )
     ):
         return util.Uninferable
 
     try:
-        return next(igetattr(attr, context))
+        return next(obj.igetattr(attr, context=context))
     except (StopIteration, InferenceError, AttributeInferenceError):
         if len(node.args) == 3:
             # Try to infer the default and return it instead.
@@ -672,15 +676,24 @@ def infer_hasattr(
     """
     try:
         obj, attr = _infer_getattr_args(node, context)
-        # Many unrelated node classes and proxies provide getattr()
-        getattr_method: _Getattr | None = getattr(obj, "getattr", None)
         if (
             isinstance(obj, util.UninferableBase)
             or isinstance(attr, util.UninferableBase)
-            or getattr_method is None
+            or not isinstance(
+                obj,
+                (
+                    bases.Proxy,
+                    nodes.ClassDef,
+                    nodes.FunctionDef,
+                    nodes.Lambda,
+                    nodes.Module,
+                    nodes.Slice,
+                    objects.Super,
+                ),
+            )
         ):
             return util.Uninferable
-        getattr_method(attr, context)
+        obj.getattr(attr, context=context)
     except UseInferenceDefault:
         # Can't infer something from this function call.
         return util.Uninferable
@@ -749,7 +762,7 @@ def infer_property(
     prop_func.postinit(
         body=[],
         args=inferred.args,
-        doc_node=getattr(inferred, "doc_node", None),
+        doc_node=inferred.doc_node if isinstance(inferred, nodes.FunctionDef) else None,
     )
     return prop_func
 
