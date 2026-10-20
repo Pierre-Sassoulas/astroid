@@ -1084,10 +1084,7 @@ def starred_assigned_stmts(  # noqa: C901
             return
 
         try:
-            # rhs has an itered method (hasattr above)
-            elts = collections.deque(
-                rhs.itered()  # pyright: ignore[reportAttributeAccessIssue]
-            )
+            elts = collections.deque(rhs.itered())
         except TypeError:
             yield util.Uninferable
             return
@@ -1144,10 +1141,7 @@ def starred_assigned_stmts(  # noqa: C901
             yield util.Uninferable
             return
         try:
-            # inferred_iterable has an itered method (hasattr above)
-            itered = (
-                inferred_iterable.itered()  # pyright: ignore[reportAttributeAccessIssue]
-            )
+            itered = inferred_iterable.itered()
         except TypeError:
             yield util.Uninferable
             return
