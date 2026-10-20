@@ -1923,9 +1923,7 @@ class Compare(NodeNG):
 
     # TODO: move to util?
     @staticmethod
-    def _to_literal(  # type: ignore[explicit-any] # literal_eval returns Any
-        node: SuccessfulInferenceResult,
-    ) -> Any:
+    def _to_literal(node: SuccessfulInferenceResult) -> object:
         # Can raise SyntaxError, ValueError, or TypeError from ast.literal_eval
         # Can raise AttributeError from node.as_string() as not all nodes have a visitor
         # Is this the stupidest idea or the simplest idea?
@@ -1961,12 +1959,13 @@ class Compare(NodeNG):
                 return util.Uninferable
 
             try:
-                left, right = self._to_literal(left), self._to_literal(right)
+                left_value = self._to_literal(left)
+                right_value = self._to_literal(right)
             except (SyntaxError, ValueError, AttributeError, TypeError):
                 return util.Uninferable
 
             try:
-                expr = op_func(left, right)
+                expr = op_func(left_value, right_value)
             except TypeError as exc:
                 raise AstroidTypeError from exc
             except ValueError as exc:
