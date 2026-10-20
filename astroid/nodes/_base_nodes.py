@@ -95,10 +95,10 @@ class FilterStmtsBaseNode(NodeNG):
     def _get_filtered_stmts(
         self,
         _: NodeNG,
-        node: NodeNG,
-        _stmts: list[NodeNG],
+        node: InferenceResult,
+        _stmts: list[InferenceResult],
         mystmt: NodeNG | None,
-    ) -> tuple[list[NodeNG], bool]:
+    ) -> tuple[list[InferenceResult], bool]:
         """Method used in _filter_stmts to get statements and trigger break."""
         if self.statement() is mystmt:
             # original node's statement is the assignment, only keep
@@ -114,16 +114,16 @@ class AssignTypeNode(NodeNG):
     """Base node for nodes that can 'assign' such as AnnAssign."""
 
     # ParentAssignNode returns the assignment type of its parent instead.
-    def assign_type(self) -> NodeNG:
+    def assign_type(self) -> AssignType:
         return self
 
     def _get_filtered_stmts(
         self,
         lookup_node: NodeNG,
-        node: NodeNG,
-        _stmts: list[NodeNG],
+        node: InferenceResult,
+        _stmts: list[InferenceResult],
         mystmt: NodeNG | None,
-    ) -> tuple[list[NodeNG], bool]:
+    ) -> tuple[list[InferenceResult], bool]:
         """Method used in filter_stmts."""
         if self is mystmt:
             return _stmts, True
@@ -137,8 +137,25 @@ class AssignTypeNode(NodeNG):
 class ParentAssignNode(AssignTypeNode):
     """Base node for nodes whose assign_type is determined by the parent node."""
 
-    def assign_type(self):
-        return self.parent.assign_type()
+    def assign_type(self) -> AssignType:
+        return assign_type_of(self.parent)
+
+
+if TYPE_CHECKING:
+    AssignType = FilterStmtsBaseNode | AssignTypeNode | nodes.Comprehension
+    """A node that answers assign_type() with itself."""
+
+
+def assign_type_of(node: InferenceResult | None) -> AssignType:
+    """Return the assign type of a node that has one, or of a proxied one."""
+    if isinstance(node, (bases.Proxy, util.UninferableBase)):
+        # The proxied node answers, or Uninferable answers itself
+        proxied_assign_type: AssignType = node.assign_type()
+        return proxied_assign_type
+    assert isinstance(
+        node, (FilterStmtsBaseNode, AssignTypeNode, nodes.Comprehension)
+    ), node
+    return node.assign_type()
 
 
 class ImportNode(FilterStmtsBaseNode, NoChildrenNode, Statement):

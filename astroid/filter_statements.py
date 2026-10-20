@@ -11,13 +11,10 @@ It is not considered public.
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import TYPE_CHECKING
 
 from astroid import nodes
-from astroid.typing import InferenceResult
-
-if TYPE_CHECKING:
-    from astroid.nodes import _base_nodes
+from astroid.nodes import _base_nodes
+from astroid.typing import InferenceResult, SuccessfulInferenceResult
 
 
 def _get_filtered_node_statements(
@@ -113,7 +110,7 @@ def _filter_stmts(
         mylineno = 0
 
     _stmts: list[InferenceResult] = []
-    _stmt_parents = []
+    _stmt_parents: list[SuccessfulInferenceResult | None] = []
     statements = _get_filtered_node_statements(base_node, stmts)
     for node, stmt in statements:
         # line filtering is on and we have reached our location, break
@@ -132,7 +129,7 @@ def _filter_stmts(
             _stmts.append(node)
             continue
 
-        assign_type = node.assign_type()
+        assign_type = _base_nodes.assign_type_of(node)
         _stmts, done = assign_type._get_filtered_stmts(base_node, node, _stmts, mystmt)
         if done:
             break
@@ -171,7 +168,7 @@ def _filter_stmts(
         else:
             # we got a parent index, this means the currently visited node
             # is at the same block level as a previously visited node
-            if _stmts[pindex].assign_type().parent_of(assign_type):
+            if _base_nodes.assign_type_of(_stmts[pindex]).parent_of(assign_type):
                 # both statements are not at the same block level
                 continue
             # if currently visited node is following previously considered

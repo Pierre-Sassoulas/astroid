@@ -2067,10 +2067,10 @@ class Comprehension(NodeNG):
     def _get_filtered_stmts(
         self,
         lookup_node: NodeNG,
-        node: NodeNG,
-        stmts: list[NodeNG],
+        node: InferenceResult,
+        stmts: list[InferenceResult],
         mystmt: NodeNG | None,
-    ) -> tuple[list[NodeNG], bool]:
+    ) -> tuple[list[InferenceResult], bool]:
         """method used in filter_stmts"""
         if self is mystmt:
             if isinstance(lookup_node, (Const, Name)):
