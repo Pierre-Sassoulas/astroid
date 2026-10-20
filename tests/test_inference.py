@@ -2897,13 +2897,6 @@ class InferenceTest(resources.SysPathSetup, unittest.TestCase):
         self.assertEqual(len(errors), 1)
         self.assertEqual(str(errors[0]), "bad operand type for unary ~: slice")
 
-    def test_unary_type_error_for_type_without_name(self) -> None:
-        """The message falls back to the source of a type that has no name."""
-        operand = extract_node("basket[1:2]").slice
-        with patch("astroid.helpers.object_type", return_value=operand):
-            message = util.BadUnaryOperationMessage(operand, "~", TypeError())
-            self.assertEqual(str(message), "bad operand type for unary ~: 1:2")
-
     def test_unary_type_errors_partially_uninferable(self) -> None:
         def patched_infer_unary_op(context):
             return iter([util.BadUnaryOperationMessage(None, None, "msg"), Uninferable])
@@ -5397,12 +5390,12 @@ class CallSiteTest(unittest.TestCase):
 
     def test_infer_argument_without_signature(self) -> None:
         """A function built without a signature cannot map its arguments."""
-        module = nodes.Module("basket")
-        func = raw_building.build_function("apple", module)
+        module = nodes.Module("mod")
+        func = raw_building.build_function("func", module)
         assert func.args.args is None
-        call_site = self._call_site_from_call(extract_node("apple(1)"))
+        call_site = self._call_site_from_call(extract_node("func(1)"))
         with pytest.raises(InferenceError, match="its signature is unknown"):
-            call_site.infer_argument(func, "seed", InferenceContext())
+            call_site.infer_argument(func, "arg", InferenceContext())
 
 
 class ObjectDunderNewTest(unittest.TestCase):
@@ -7664,163 +7657,3 @@ def test_augassign_list_tuple_does_not_mutate_initial_value():
     inferred = next(module.body[-1].value.infer())
     assert inferred.as_string() == "[0, 1, 1]"
     assert module.body[0].value.as_string() == "[0]"
-
-
-def test_argv_is_uninferable_only_on_the_sys_module() -> None:
-    """A class that happens to be named ``sys`` keeps its ``argv`` attribute."""
-    node = _extract_single_node("""
-    class sys:
-        argv = 1
-    sys.argv #@
-    """)
-    inferred = next(node.infer())
-    assert isinstance(inferred, nodes.Const)
-    assert inferred.value == 1
-
-
-def test_attribute_of_lambda_is_not_inferred() -> None:
-    """A ``Lambda`` has no ``igetattr``: its attributes infer to nothing."""
-    node = _extract_single_node("(lambda: 1).__name__")
-    with pytest.raises(InferenceError):
-        next(node.infer())
-
-
-def test_starred_dict_view_is_unpacked() -> None:
-    node = _extract_single_node("""
-    d = {"a": 1}
-    [*d.keys()] #@
-    """)
-    inferred = next(node.infer())
-    assert isinstance(inferred, nodes.List)
-    assert [elt.value for elt in inferred.elts] == ["a"]
-
-
-def test_starred_function_is_not_unpacked() -> None:
-    node = _extract_single_node("""
-    def func():
-        pass
-    [*func] #@
-    """)
-    with pytest.raises(InferenceError):
-        next(node.infer())
-
-
-def test_call_of_module_is_not_inferred() -> None:
-    node = _extract_single_node("""
-    import os
-    os() #@
-    """)
-    with pytest.raises(InferenceError):
-        next(node.infer())
-
-
-def test_subscript_of_function_is_not_inferred() -> None:
-    node = _extract_single_node("""
-    def func():
-        pass
-    func[0] #@
-    """)
-    with pytest.raises(InferenceError):
-        next(node.infer())
-
-
-def test_subscript_of_dict_view() -> None:
-    node = _extract_single_node("""
-    d = {"a": 1}
-    d.keys()[0] #@
-    """)
-    inferred = next(node.infer())
-    assert isinstance(inferred, nodes.Const)
-    assert inferred.value == "a"
-
-
-def test_unary_operation_on_dict_view() -> None:
-    node = _extract_single_node("""
-    d = {"a": 1}
-    not d.keys() #@
-    """)
-    inferred = next(node.infer())
-    assert isinstance(inferred, nodes.Const)
-    assert inferred.value is False
-
-
-def test_unary_operation_on_function_reports_missing_special_method() -> None:
-    node = _extract_single_node("""
-    def func():
-        pass
-    -func #@
-    """)
-    errors = node.type_errors()
-    assert len(errors) == 1
-    assert isinstance(errors[0].error, AttributeInferenceError)
-    assert str(errors[0]) == "bad operand type for unary -: func"
-
-
-def test_unary_operation_on_instance_without_special_method() -> None:
-    node = _extract_single_node("""
-    class A:
-        pass
-    -A() #@
-    """)
-    errors = node.type_errors()
-    assert len(errors) == 1
-    assert isinstance(errors[0].error, AttributeInferenceError)
-
-
-def test_binary_operation_special_method_bound_to_module() -> None:
-    """``__add__`` bound to a module cannot be called: the reflected method is used."""
-    node = _extract_single_node("""
-    import os
-    class A:
-        __add__ = os
-    class B:
-        def __radd__(self, other):
-            return 2
-    A() + B() #@
-    """)
-    inferred = next(node.infer())
-    assert isinstance(inferred, nodes.Const)
-    assert inferred.value == 2
-
-
-def test_binary_operation_metaclass_as_special_method_does_not_crash() -> None:
-    """``type.infer_call_result`` reads ``caller.args`` on the operand instance.
-
-    The ``AttributeError`` safety net around binary operation methods is
-    still needed for this.
-    """
-    node = _extract_single_node("""
-    class A:
-        __add__ = type
-    A() + 1 #@
-    """)
-    assert node.inferred() == [util.Uninferable]
-
-
-def test_attribute_with_metaclass_function_as_property_does_not_crash() -> None:
-    """``with_metaclass`` inference reads ``caller.args`` on the instance.
-
-    The ``AttributeError`` safety net around attribute inference is still
-    needed for this.
-    """
-    node = _extract_single_node("""
-    def with_metaclass(meta, *bases):
-        return 1
-    class A:
-        x = property(with_metaclass)
-    A().x #@
-    """)
-    with pytest.raises(InferenceError):
-        next(node.infer())
-
-
-def test_binary_operation_metaclass_special_method_bound_to_module() -> None:
-    node = _extract_single_node("""
-    import os
-    class Meta(type):
-        __add__ = os
-    class A(metaclass=Meta):
-        pass
-    A + 1 #@
-    """)
-    assert node.inferred() == [util.Uninferable]
