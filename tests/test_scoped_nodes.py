@@ -480,6 +480,28 @@ class FunctionNodeTest(ModuleLoader, unittest.TestCase):
         astroid = builder.parse("lmbd = lambda: None", __name__)
         self.assertEqual(f"{__name__}.<lambda>", astroid["lmbd"].parent.value.qname())
 
+    def test_comprehension_qname(self) -> None:
+        module = builder.parse(
+            """
+            def func():
+                (x for x in y)
+                [x for x in y]
+                {x for x in y}
+                {x: x for x in y}
+            """,
+            __name__,
+        )
+        names = [stmt.value.qname() for stmt in module["func"].body]
+        self.assertEqual(
+            names,
+            [
+                f"{__name__}.func.<genexpr>",
+                f"{__name__}.func.<listcomp>",
+                f"{__name__}.func.<setcomp>",
+                f"{__name__}.func.<dictcomp>",
+            ],
+        )
+
     def test_lambda_getattr(self) -> None:
         astroid = builder.parse("lmbd = lambda: None")
         self.assertIsInstance(
@@ -3085,3 +3107,25 @@ class TestFrameNodes:
 
         assert module.body[1].value.locals["x"][0].frame() == module
         assert module.body[1].value.locals["x"][0].frame() == module
+
+
+def test_type_subclass_infer_call_result_without_caller() -> None:
+    node = extract_node("class Meta(type): pass")
+    inferred = list(node.infer_call_result(None))
+    assert len(inferred) == 1
+    assert isinstance(inferred[0], Instance)
+    assert inferred[0].qname() == ".Meta"
+
+
+def test_decoratornames_skips_node_without_qname() -> None:
+    func = extract_node("""
+    @decorator
+    def func():  #@
+        pass
+    """)
+    decorator = func.decorators.nodes[0]
+    no_qname = nodes.Pass(
+        lineno=0, col_offset=0, parent=func, end_lineno=0, end_col_offset=0
+    )
+    with patch.object(decorator, "infer", return_value=iter([no_qname])):
+        assert func.decoratornames() == set()

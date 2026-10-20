@@ -15,7 +15,16 @@ import itertools
 import os
 from collections.abc import Generator, Iterable, Iterator, Sequence
 from functools import cached_property, lru_cache
-from typing import TYPE_CHECKING, ClassVar, Literal, NoReturn, Self, TypeGuard
+from typing import (
+    TYPE_CHECKING,
+    ClassVar,
+    Literal,
+    NoReturn,
+    Self,
+    TypeGuard,
+    cast,
+    overload,
+)
 
 from astroid import bases, protocols, util
 from astroid.context import (
@@ -145,7 +154,7 @@ def clean_duplicates_mro(
     context: InferenceContext | None,
 ) -> list[list[ClassDef]]:
     for sequence in sequences:
-        seen = set()
+        seen: set[tuple[int | None, str]] = set()
         for node in sequence:
             lineno_and_qname = (node.lineno, node.qname())
             if lineno_and_qname in seen:
@@ -170,6 +179,34 @@ def function_to_method(
         if n.type != "staticmethod":
             return bases.UnboundMethod(n)
     return n
+
+
+def _builtin_object() -> ClassDef:
+    # builtins.object is always defined, and always as a class
+    return cast(ClassDef, builtin_lookup("object")[1][0])
+
+
+def _inferred_qname(node: SuccessfulInferenceResult) -> str | None:
+    """Return the qualified name of an inferred node, or None if it has none."""
+    if isinstance(
+        node,
+        (
+            LocalsDictNodeNG,
+            bases.Proxy,
+            node_classes.ParamSpec,
+            node_classes.Slice,
+            node_classes.TypeAlias,
+            node_classes.TypeVar,
+            node_classes.TypeVarTuple,
+            node_classes.Unknown,
+        ),
+    ):
+        return node.qname()
+    from astroid import objects  # pylint: disable=import-outside-toplevel
+
+    if isinstance(node, objects.Super):
+        return node.qname()
+    return None
 
 
 def _infer_last(
@@ -432,7 +469,7 @@ class Module(LocalsDictNodeNG):
 
     def import_module(
         self,
-        modname: str,
+        modname: str | None,
         relative_only: bool = False,
         level: int | None = None,
         use_cache: bool = True,
@@ -468,7 +505,17 @@ class Module(LocalsDictNodeNG):
                 raise
         return AstroidManager().ast_from_module_name(modname, use_cache=use_cache)
 
-    def relative_to_absolute_name(self, modname: str, level: int | None) -> str:
+    @overload
+    def relative_to_absolute_name(self, modname: str, level: int | None) -> str: ...
+
+    @overload
+    def relative_to_absolute_name(
+        self, modname: str | None, level: int | None
+    ) -> str | None: ...
+
+    def relative_to_absolute_name(
+        self, modname: str | None, level: int | None
+    ) -> str | None:
         """Get the absolute module name for a relative import.
 
         The relative import can be implicit or explicit.
@@ -494,6 +541,7 @@ class Module(LocalsDictNodeNG):
             elif (
                 self.path
                 and not os.path.exists(os.path.dirname(self.path[0]) + "/__init__.py")
+                and modname is not None
                 and os.path.exists(
                     os.path.dirname(self.path[0]) + "/" + modname.split(".")[0]
                 )
@@ -612,11 +660,12 @@ class GeneratorExp(ComprehensionScope):
     >>> import astroid
     >>> node = astroid.extract_node('(thing for thing in things if thing)')
     >>> node
-    <GeneratorExp l.1 at 0x...>
+    <GeneratorExp.<genexpr> l.1 at 0x...>
     """
 
     _astroid_fields = ("elt", "generators")
     _other_other_fields = ("locals",)
+    name = "<genexpr>"
     elt: NodeNG
     """The element that forms the output of the expression."""
 
@@ -667,11 +716,12 @@ class DictComp(ComprehensionScope):
     >>> import astroid
     >>> node = astroid.extract_node('{k:v for k, v in things if k > v}')
     >>> node
-    <DictComp l.1 at 0x...>
+    <DictComp.<dictcomp> l.1 at 0x...>
     """
 
     _astroid_fields = ("key", "value", "generators")
     _other_other_fields = ("locals",)
+    name = "<dictcomp>"
     key: NodeNG
     """What produces the keys."""
 
@@ -728,11 +778,12 @@ class SetComp(ComprehensionScope):
     >>> import astroid
     >>> node = astroid.extract_node('{thing for thing in things if thing}')
     >>> node
-    <SetComp l.1 at 0x...>
+    <SetComp.<setcomp> l.1 at 0x...>
     """
 
     _astroid_fields = ("elt", "generators")
     _other_other_fields = ("locals",)
+    name = "<setcomp>"
     elt: NodeNG
     """The element that forms the output of the expression."""
 
@@ -785,11 +836,12 @@ class ListComp(ComprehensionScope):
     >>> import astroid
     >>> node = astroid.extract_node('[thing for thing in things if thing]')
     >>> node
-    <ListComp l.1 at 0x...>
+    <ListComp.<listcomp> l.1 at 0x...>
     """
 
     _astroid_fields = ("elt", "generators")
     _other_other_fields = ("locals",)
+    name = "<listcomp>"
 
     elt: NodeNG
     """The element that forms the output of the expression."""
@@ -1140,7 +1192,7 @@ class FunctionDef(
         self.locals = {}
         """A map of the name of a local variable to the node defining it."""
 
-        self.body: list[node_classes.NodeNG] = []
+        self.body: list[NodeNG] = []
         """The contents of the function body."""
 
         self.type_params: list[nodes.TypeVar | nodes.ParamSpec | nodes.TypeVarTuple] = (
@@ -1437,14 +1489,17 @@ class FunctionDef(
             that infers to Uninferable.
         """
         result: set[str | util.UninferableBase] = set()
-        decoratornodes = []
+        decoratornodes: list[NodeNG] = []
         if self.decorators is not None:
             decoratornodes += self.decorators.nodes
         decoratornodes += self.extra_decorators
         for decnode in decoratornodes:
             try:
                 for infnode in decnode.infer(context=context):
-                    result.add(infnode.qname())
+                    if isinstance(infnode, util.UninferableBase):
+                        result.add(infnode)
+                    elif (name := _inferred_qname(infnode)) is not None:
+                        result.add(name)
             except InferenceError:
                 continue
         return result
@@ -1475,10 +1530,10 @@ class FunctionDef(
                     inferred = next(node.infer())
                 except (InferenceError, StopIteration):
                     continue
-                if inferred and inferred.qname() in {
-                    "abc.abstractproperty",
-                    "abc.abstractmethod",
-                }:
+                if not isinstance(inferred, util.UninferableBase) and (
+                    _inferred_qname(inferred)
+                    in {"abc.abstractproperty", "abc.abstractmethod"}
+                ):
                     return True
 
         for child_node in self.body:
@@ -1582,14 +1637,15 @@ class FunctionDef(
             and len(self.args.args) == 1
             and self.args.vararg is not None
         ):
-            if isinstance(caller.args, node_classes.Arguments):
+            call_args: Sequence[NodeNG]
+            if isinstance(caller, (Lambda, FunctionDef)):
                 assert caller.args.args is not None
                 call_args = caller.args.args
-            elif isinstance(caller.args, list):
+            elif isinstance(caller, node_classes.Call):
                 call_args = caller.args
             else:
-                raise TypeError(  # pragma: no cover
-                    f"caller.args was neither Arguments nor list; got {type(caller.args)}"
+                raise AttributeInferenceError(
+                    attribute="args", target=caller, context=context
                 )
             if not call_args:
                 # ``with_metaclass()`` called without a metaclass argument is
@@ -1761,8 +1817,10 @@ def _is_metaclass(
     for base in klass.bases:
         try:
             for baseobj in base.infer(context=context):
-                baseobj_name = baseobj.qname()
-                if baseobj_name in seen:
+                if isinstance(baseobj, util.UninferableBase):
+                    continue
+                baseobj_name = _inferred_qname(baseobj)
+                if baseobj_name is None or baseobj_name in seen:
                     continue
 
                 seen.add(baseobj_name)
@@ -1809,7 +1867,7 @@ def _class_type(
         for base in klass.ancestors(recurs=False):
             name = _class_type(base, ancestors)
             if name != "class":
-                if name == "metaclass" and klass._type != "metaclass":
+                if name == "metaclass":
                     # don't propagate it if the current class
                     # can't be a metaclass
                     continue
@@ -2049,7 +2107,9 @@ class ClassDef(
 
         return any(anc.qname() == type_name for anc in self.ancestors(context=context))
 
-    def _infer_type_call(self, caller, context):
+    def _infer_type_call(
+        self, caller: node_classes.Call, context: InferenceContext | None
+    ) -> ClassDef | util.UninferableBase:
         try:
             name_node = next(caller.args[0].infer(context))
         except StopIteration as e:
@@ -2078,6 +2138,8 @@ class ClassDef(
         if isinstance(class_bases, (node_classes.Tuple, node_classes.List)):
             bases: list[SuccessfulInferenceResult] = []
             for base in class_bases.itered():
+                if isinstance(base, util.UninferableBase):
+                    continue
                 inferred = next(base.infer(context=context), None)
                 if inferred:
                     bases.append(
@@ -2109,15 +2171,19 @@ class ClassDef(
         context: InferenceContext | None = None,
     ) -> Iterator[InferenceResult]:
         """infer what a class is returning when called"""
-        if self.is_subtype_of("builtins.type", context) and len(caller.args) == 3:
-            result = self._infer_type_call(caller, context)
-            yield result
-            return
+        if caller is not None and self.is_subtype_of("builtins.type", context):
+            if not isinstance(caller, node_classes.Call):
+                raise AttributeInferenceError(
+                    attribute="args", target=caller, context=context
+                )
+            if len(caller.args) == 3:
+                yield self._infer_type_call(caller, context)
+                return
 
         dunder_call = None
         try:
             metaclass = self.metaclass(context=context)
-            if metaclass is not None:
+            if isinstance(metaclass, (ClassDef, bases.Instance)):
                 # Only get __call__ if it's defined locally for the metaclass.
                 # Otherwise we will find ObjectModel.__call__ which will
                 # return an instance of the metaclass. Instantiating the class is
@@ -2127,7 +2193,10 @@ class ClassDef(
         except (AttributeInferenceError, StopIteration):
             pass
 
-        if dunder_call and dunder_call.qname() != "builtins.type.__call__":
+        if (
+            isinstance(dunder_call, (Lambda, FunctionDef, ClassDef, bases.Proxy))
+            and dunder_call.qname() != "builtins.type.__call__"
+        ):
             # Call type.__call__ if not set metaclass
             # (since type is the default metaclass)
             context = bind_context_to_node(context, self)
@@ -2216,8 +2285,7 @@ class ClassDef(
         if context is None:
             context = InferenceContext()
         if not self.bases and self.qname() != "builtins.object":
-            # This should always be a ClassDef (which we don't assert for)
-            yield builtin_lookup("object")[1][0]  # type: ignore[misc]
+            yield _builtin_object()
             return
 
         for stmt in self.bases:
@@ -2487,7 +2555,7 @@ class ClassDef(
             # to the attribute happening *after* the attribute's definition (e.g. AugAssigns on lists)
             if len(attributes) > 1:
                 first_attr, attributes = attributes[0], attributes[1:]
-                first_scope = first_attr.parent.scope()
+                first_scope = first_attr.parent.scope() if first_attr.parent else None
                 attributes = [first_attr] + [
                     attr
                     for attr in attributes
@@ -2544,7 +2612,11 @@ class ClassDef(
                     # the metaclass of all its bases), in which case we can resolve the
                     # property. If not, i.e. the property is defined in some base class
                     # instead, then we return the property object
-                    elif metaclass and property_function.parent.scope() is metaclass:
+                    elif (
+                        metaclass
+                        and property_function.parent
+                        and property_function.parent.scope() is metaclass
+                    ):
                         # Resolve a property as long as it is not accessed through
                         # the class itself.
                         yield from property_function.infer_call_result(
@@ -2607,19 +2679,16 @@ class ClassDef(
         try:
             methods = lookup(self, "__getitem__", context=context)
         except AttributeInferenceError as exc:
-            if isinstance(self, ClassDef):
-                # subscripting a class definition may be
-                # achieved thanks to __class_getitem__ method
-                # which is a classmethod defined in the class
-                # that supports subscript and not in the metaclass
-                try:
-                    methods = self.getattr("__class_getitem__")
-                    # Here it is assumed that the __class_getitem__ node is
-                    # a FunctionDef. One possible improvement would be to deal
-                    # with more generic inference.
-                except AttributeInferenceError:
-                    raise AstroidTypeError(node=self, context=context) from exc
-            else:
+            # subscripting a class definition may be
+            # achieved thanks to __class_getitem__ method
+            # which is a classmethod defined in the class
+            # that supports subscript and not in the metaclass
+            try:
+                methods = self.getattr("__class_getitem__")
+                # Here it is assumed that the __class_getitem__ node is
+                # a FunctionDef. One possible improvement would be to deal
+                # with more generic inference.
+            except AttributeInferenceError:
                 raise AstroidTypeError(node=self, context=context) from exc
 
         method = methods[0]
@@ -2882,7 +2951,7 @@ class ClassDef(
         context: InferenceContext | None = None,
         *,
         base_classes: frozenset[ClassDef] = frozenset(),
-    ):
+    ) -> Generator[ClassDef]:
         # Similar with .ancestors, but the difference is when one base is inferred,
         # only the first object is wanted. That's because
         # we aren't interested in superclasses, as in the following
@@ -2899,7 +2968,7 @@ class ClassDef(
         if context is None:
             context = InferenceContext()
         if not self.bases and self.qname() != "builtins.object":
-            yield builtin_lookup("object")[1][0]
+            yield _builtin_object()
             return
 
         for stmt in self.bases:
@@ -2922,7 +2991,7 @@ class ClassDef(
             if not baseobj.hide:
                 yield baseobj
             else:
-                yield from baseobj.bases
+                yield from (b for b in baseobj.bases if isinstance(b, ClassDef))
 
     def _resolve_circular_base(
         self,
@@ -2997,8 +3066,7 @@ class ClassDef(
             yield self.decorators
 
         yield from self.bases
-        if self.keywords is not None:
-            yield from self.keywords
+        yield from self.keywords
         yield from self.type_params
 
         yield from self.body

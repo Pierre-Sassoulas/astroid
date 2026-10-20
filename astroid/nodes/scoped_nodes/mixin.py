@@ -29,6 +29,8 @@ class LocalsDictNodeNG(_base_nodes.LookupMixIn):
     locals: dict[str, list[InferenceResult]]
     """A map of the name of a local variable to the node defining the local."""
 
+    name: str
+
     def qname(self) -> str:
         """Get the 'qualified' name of the node.
 
@@ -36,7 +38,6 @@ class LocalsDictNodeNG(_base_nodes.LookupMixIn):
 
         :returns: The qualified name.
         """
-        # pylint: disable=no-member; github.com/pylint-dev/astroid/issues/278
         if self.parent is None:
             return self.name
         try:
