@@ -145,7 +145,7 @@ def clean_duplicates_mro(
     context: InferenceContext | None,
 ) -> list[list[ClassDef]]:
     for sequence in sequences:
-        seen = set()
+        seen: set[tuple[int | None, str]] = set()
         for node in sequence:
             lineno_and_qname = (node.lineno, node.qname())
             if lineno_and_qname in seen:
@@ -1172,7 +1172,7 @@ class FunctionDef(
         self.locals = {}
         """A map of the name of a local variable to the node defining it."""
 
-        self.body: list[node_classes.NodeNG] = []
+        self.body: list[NodeNG] = []
         """The contents of the function body."""
 
         self.type_params: list[nodes.TypeVar | nodes.ParamSpec | nodes.TypeVarTuple] = (
@@ -1469,7 +1469,7 @@ class FunctionDef(
             that infers to Uninferable.
         """
         result: set[str | util.UninferableBase] = set()
-        decoratornodes = []
+        decoratornodes: list[NodeNG] = []
         if self.decorators is not None:
             decoratornodes += self.decorators.nodes
         decoratornodes += self.extra_decorators
@@ -1849,7 +1849,7 @@ def _class_type(
         for base in klass.ancestors(recurs=False):
             name = _class_type(base, ancestors)
             if name != "class":
-                if name == "metaclass" and klass._type != "metaclass":
+                if name == "metaclass":
                     # don't propagate it if the current class
                     # can't be a metaclass
                     continue
@@ -2537,7 +2537,9 @@ class ClassDef(
             # to the attribute happening *after* the attribute's definition (e.g. AugAssigns on lists)
             if len(attributes) > 1:
                 first_attr, attributes = attributes[0], attributes[1:]
-                first_scope = first_attr.parent.scope()
+                first_scope = (
+                    first_attr.parent.scope() if first_attr.parent else None
+                )
                 attributes = [first_attr] + [
                     attr
                     for attr in attributes
@@ -2594,7 +2596,11 @@ class ClassDef(
                     # the metaclass of all its bases), in which case we can resolve the
                     # property. If not, i.e. the property is defined in some base class
                     # instead, then we return the property object
-                    elif metaclass and property_function.parent.scope() is metaclass:
+                    elif (
+                        metaclass
+                        and property_function.parent
+                        and property_function.parent.scope() is metaclass
+                    ):
                         # Resolve a property as long as it is not accessed through
                         # the class itself.
                         yield from property_function.infer_call_result(
@@ -2657,19 +2663,16 @@ class ClassDef(
         try:
             methods = lookup(self, "__getitem__", context=context)
         except AttributeInferenceError as exc:
-            if isinstance(self, ClassDef):
-                # subscripting a class definition may be
-                # achieved thanks to __class_getitem__ method
-                # which is a classmethod defined in the class
-                # that supports subscript and not in the metaclass
-                try:
-                    methods = self.getattr("__class_getitem__")
-                    # Here it is assumed that the __class_getitem__ node is
-                    # a FunctionDef. One possible improvement would be to deal
-                    # with more generic inference.
-                except AttributeInferenceError:
-                    raise AstroidTypeError(node=self, context=context) from exc
-            else:
+            # subscripting a class definition may be
+            # achieved thanks to __class_getitem__ method
+            # which is a classmethod defined in the class
+            # that supports subscript and not in the metaclass
+            try:
+                methods = self.getattr("__class_getitem__")
+                # Here it is assumed that the __class_getitem__ node is
+                # a FunctionDef. One possible improvement would be to deal
+                # with more generic inference.
+            except AttributeInferenceError:
                 raise AstroidTypeError(node=self, context=context) from exc
 
         method = methods[0]
@@ -3047,8 +3050,7 @@ class ClassDef(
             yield self.decorators
 
         yield from self.bases
-        if self.keywords is not None:
-            yield from self.keywords
+        yield from self.keywords
         yield from self.type_params
 
         yield from self.body
