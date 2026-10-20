@@ -3787,7 +3787,6 @@ class Subscript(NodeNG):
     <Subscript l.1 at 0x...>
     """
 
-    _SUBSCRIPT_SENTINEL = object()
     _astroid_fields = ("value", "slice")
     _other_fields = ("ctx",)
 
@@ -3852,7 +3851,7 @@ class Subscript(NodeNG):
                     return None
 
                 # Try to deduce the index value.
-                index_value = self._SUBSCRIPT_SENTINEL
+                index_value: SuccessfulInferenceResult | None = None
                 if value.__class__ == Instance:
                     index_value = index
                 # The exact class on purpose, like the __class__ check above.
@@ -3863,7 +3862,7 @@ class Subscript(NodeNG):
                 else:
                     index_value = index
 
-                if index_value is self._SUBSCRIPT_SENTINEL:
+                if index_value is None:
                     raise InferenceError(node=self, context=context)
 
                 if not isinstance(
