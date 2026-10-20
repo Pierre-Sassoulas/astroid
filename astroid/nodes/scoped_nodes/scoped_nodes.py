@@ -1614,14 +1614,15 @@ class FunctionDef(
             and len(self.args.args) == 1
             and self.args.vararg is not None
         ):
-            if isinstance(caller.args, node_classes.Arguments):
+            call_args: Sequence[NodeNG]
+            if isinstance(caller, (Lambda, FunctionDef)):
                 assert caller.args.args is not None
                 call_args = caller.args.args
-            elif isinstance(caller.args, list):
+            elif isinstance(caller, node_classes.Call):
                 call_args = caller.args
             else:
-                raise TypeError(  # pragma: no cover
-                    f"caller.args was neither Arguments nor list; got {type(caller.args)}"
+                raise AttributeInferenceError(
+                    attribute="args", target=caller, context=context
                 )
             if not call_args:
                 # ``with_metaclass()`` called without a metaclass argument is
@@ -2083,7 +2084,9 @@ class ClassDef(
 
         return any(anc.qname() == type_name for anc in self.ancestors(context=context))
 
-    def _infer_type_call(self, caller, context):
+    def _infer_type_call(
+        self, caller: node_classes.Call, context: InferenceContext | None
+    ) -> ClassDef | util.UninferableBase:
         try:
             name_node = next(caller.args[0].infer(context))
         except StopIteration as e:
@@ -2112,6 +2115,8 @@ class ClassDef(
         if isinstance(class_bases, (node_classes.Tuple, node_classes.List)):
             bases: list[SuccessfulInferenceResult] = []
             for base in class_bases.itered():
+                if isinstance(base, util.UninferableBase):
+                    continue
                 inferred = next(base.infer(context=context), None)
                 if inferred:
                     bases.append(
@@ -2143,19 +2148,19 @@ class ClassDef(
         context: InferenceContext | None = None,
     ) -> Iterator[InferenceResult]:
         """infer what a class is returning when called"""
-        if (
-            caller is not None
-            and self.is_subtype_of("builtins.type", context)
-            and len(caller.args) == 3
-        ):
-            result = self._infer_type_call(caller, context)
-            yield result
-            return
+        if caller is not None and self.is_subtype_of("builtins.type", context):
+            if not isinstance(caller, node_classes.Call):
+                raise AttributeInferenceError(
+                    attribute="args", target=caller, context=context
+                )
+            if len(caller.args) == 3:
+                yield self._infer_type_call(caller, context)
+                return
 
         dunder_call = None
         try:
             metaclass = self.metaclass(context=context)
-            if metaclass is not None:
+            if isinstance(metaclass, (ClassDef, bases.Instance)):
                 # Only get __call__ if it's defined locally for the metaclass.
                 # Otherwise we will find ObjectModel.__call__ which will
                 # return an instance of the metaclass. Instantiating the class is
@@ -2165,7 +2170,10 @@ class ClassDef(
         except (AttributeInferenceError, StopIteration):
             pass
 
-        if dunder_call and dunder_call.qname() != "builtins.type.__call__":
+        if (
+            isinstance(dunder_call, (Lambda, FunctionDef, ClassDef, bases.Proxy))
+            and dunder_call.qname() != "builtins.type.__call__"
+        ):
             # Call type.__call__ if not set metaclass
             # (since type is the default metaclass)
             context = bind_context_to_node(context, self)
