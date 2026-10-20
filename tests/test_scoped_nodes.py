@@ -3116,3 +3116,16 @@ def test_type_subclass_infer_call_result_without_caller() -> None:
     assert isinstance(inferred[0], Instance)
     assert inferred[0].qname() == ".Meta"
 
+
+def test_decoratornames_skips_node_without_qname() -> None:
+    func = extract_node("""
+    @decorator
+    def func():  #@
+        pass
+    """)
+    decorator = func.decorators.nodes[0]
+    no_qname = nodes.Pass(
+        lineno=0, col_offset=0, parent=func, end_lineno=0, end_col_offset=0
+    )
+    with patch.object(decorator, "infer", return_value=iter([no_qname])):
+        assert func.decoratornames() == set()

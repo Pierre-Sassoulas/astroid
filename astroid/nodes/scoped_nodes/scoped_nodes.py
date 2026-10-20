@@ -172,6 +172,29 @@ def function_to_method(
     return n
 
 
+def _inferred_qname(node: SuccessfulInferenceResult) -> str | None:
+    """Return the qualified name of an inferred node, or None if it has none."""
+    if isinstance(
+        node,
+        (
+            LocalsDictNodeNG,
+            bases.Proxy,
+            node_classes.ParamSpec,
+            node_classes.Slice,
+            node_classes.TypeAlias,
+            node_classes.TypeVar,
+            node_classes.TypeVarTuple,
+            node_classes.Unknown,
+        ),
+    ):
+        return node.qname()
+    from astroid import objects  # pylint: disable=import-outside-toplevel
+
+    if isinstance(node, objects.Super):
+        return node.qname()
+    return None
+
+
 def _infer_last(
     arg: SuccessfulInferenceResult, context: InferenceContext
 ) -> InferenceResult:
@@ -1448,7 +1471,10 @@ class FunctionDef(
         for decnode in decoratornodes:
             try:
                 for infnode in decnode.infer(context=context):
-                    result.add(infnode.qname())
+                    if isinstance(infnode, util.UninferableBase):
+                        result.add(infnode)
+                    elif (name := _inferred_qname(infnode)) is not None:
+                        result.add(name)
             except InferenceError:
                 continue
         return result
@@ -1479,7 +1505,9 @@ class FunctionDef(
                     inferred = next(node.infer())
                 except (InferenceError, StopIteration):
                     continue
-                if inferred and inferred.qname() in {
+                if not isinstance(
+                    inferred, util.UninferableBase
+                ) and _inferred_qname(inferred) in {
                     "abc.abstractproperty",
                     "abc.abstractmethod",
                 }:
@@ -1765,8 +1793,10 @@ def _is_metaclass(
     for base in klass.bases:
         try:
             for baseobj in base.infer(context=context):
-                baseobj_name = baseobj.qname()
-                if baseobj_name in seen:
+                if isinstance(baseobj, util.UninferableBase):
+                    continue
+                baseobj_name = _inferred_qname(baseobj)
+                if baseobj_name is None or baseobj_name in seen:
                     continue
 
                 seen.add(baseobj_name)
