@@ -1282,3 +1282,9 @@ def test_generator_has_no_descriptor_get() -> None:
     generator = next(node.infer())
     with pytest.raises(AttributeInferenceError):
         generator.special_attributes.lookup("__get__")
+
+
+def test_descriptor_get_without_signature_keeps_the_arguments() -> None:
+    node = builder.extract_node("int.__format__.__get__")
+    descriptor_get = next(node.infer())
+    assert descriptor_get.args.args is None

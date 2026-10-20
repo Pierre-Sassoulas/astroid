@@ -578,7 +578,9 @@ class BaseFunctionModel(ObjectModel[_FunctionT_co]):
                 This has only the *self* parameter but when we access test.__get__
                 we get a new object which has two parameters, *self* and *type*.
                 """
-                nonlocal func
+                if func.args.args is None:
+                    # No signature to extend: use the one of the underlying func
+                    return func.args
                 arguments = nodes.Arguments(
                     parent=func.args.parent, vararg=None, kwarg=None
                 )
@@ -609,7 +611,7 @@ class BaseFunctionModel(ObjectModel[_FunctionT_co]):
                 )
                 return arguments
 
-        return DescriptorBoundMethod(proxy=self._instance, bound=self._instance)
+        return DescriptorBoundMethod(proxy=func, bound=func)
 
     # Function-specific attributes.
     @property
