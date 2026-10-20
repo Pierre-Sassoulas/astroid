@@ -87,6 +87,7 @@ repos:
     hooks:
       - id: pyright
         pass_filenames: false
+        additional_dependencies: [pytest]
 
   - repo: https://github.com/rbubley/mirrors-prettier
     rev: v3.9.10
