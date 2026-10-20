@@ -769,6 +769,17 @@ def test_for_loop_starred_unpacking_stops_at_non_iterable_element() -> None:
     assert not inferred.elts
 
 
+def test_for_loop_nested_starred_unpacking_stops_at_name_element() -> None:
+    node = extract_node("""
+    x = (2, 3, 4)
+    for a, (b, *c) in [(1, x)]:
+        c #@
+    """)
+    inferred = next(node.infer())
+    assert isinstance(inferred, nodes.List)
+    assert not inferred.elts
+
+
 def test_bool_value_with_special_method_bound_to_module() -> None:
     node = extract_node("""
     import os

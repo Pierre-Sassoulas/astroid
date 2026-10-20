@@ -1194,7 +1194,7 @@ def starred_assigned_stmts(  # noqa: C901
             # *b* should now point to just the elements at that particular iteration step,
             # which astroid can't know about.
 
-            found_element = None
+            found_elts: list[InferenceResult] = []
             for index, lookup in enumerate(lookups):
                 if not isinstance(
                     element,
@@ -1209,22 +1209,19 @@ def starred_assigned_stmts(  # noqa: C901
                     ),
                 ):
                     break
-                if index + 1 is len(lookups):
-                    cur_lookup: slice[int, int | None, None] | int = last_lookup
-                else:
-                    # Grab just the index, not the whole length
-                    cur_lookup = lookup[0]
                 try:
                     itered_inner_element = element.itered()
-                    element = itered_inner_element[cur_lookup]
+                    if index + 1 == len(lookups):
+                        found_elts = list(itered_inner_element[last_lookup])
+                    else:
+                        # Grab just the index, not the whole length
+                        element = itered_inner_element[lookup[0]]
                 except IndexError:
                     break
                 except TypeError:
                     # Most likely the itered() call failed, cannot make sense of this
                     yield util.Uninferable
                     return
-                else:
-                    found_element = element
 
             unpacked = nodes.List(
                 ctx=Context.Store,
@@ -1232,7 +1229,7 @@ def starred_assigned_stmts(  # noqa: C901
                 lineno=self.lineno,
                 col_offset=self.col_offset,
             )
-            unpacked.postinit(elts=found_element or [])
+            unpacked.postinit(elts=found_elts)
             yield unpacked
             return
 
