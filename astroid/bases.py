@@ -348,7 +348,10 @@ class BaseInstance(Proxy):
 
         # Otherwise we infer the call to the __call__ dunder normally
         for node in self._proxied.igetattr("__call__", context):
-            if isinstance(node, UninferableBase) or not node.callable():
+            if (
+                not isinstance(node, (Proxy, nodes.ClassDef, nodes.Lambda))
+                or not node.callable()
+            ):
                 continue
             if isinstance(node, BaseInstance) and node._proxied is self._proxied:
                 inferred = True
