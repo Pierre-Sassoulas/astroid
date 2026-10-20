@@ -1072,13 +1072,14 @@ class TreeRebuilder:
             parent=parent,
         )
         key: nodes.NodeNG
-        if node.value is None:
+        # typeshed's stubs for Python < 3.15 have no None value
+        node_value = cast("ast.expr | None", node.value)
+        if node_value is None:
             # PEP 798 dict-comprehension unpacking, e.g. ``{**d for d in dicts}``.
             # CPython stores the unpacked mapping in ``key`` and leaves
             # ``value`` as ``None``. Mirror the ``ast.Dict`` representation of
             # ``{**d}``: a ``DictUnpack`` key together with the real value.
-            # (typeshed's stubs for Python < 3.15 have no None value)
-            value = self.visit(node.key, newnode)  # type: ignore[unreachable]
+            value = self.visit(node.key, newnode)
             key = nodes.DictUnpack(
                 lineno=value.lineno,
                 col_offset=value.col_offset,
@@ -1088,7 +1089,7 @@ class TreeRebuilder:
             )
         else:
             key = self.visit(node.key, newnode)
-            value = self.visit(node.value, newnode)
+            value = self.visit(node_value, newnode)
         newnode.postinit(
             key,
             value,
