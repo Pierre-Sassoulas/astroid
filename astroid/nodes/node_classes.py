@@ -2163,7 +2163,7 @@ class Const(_base_nodes.NoChildrenNode, Instance):
     infer_unary_op = protocols.const_infer_unary_op
     infer_binary_op = protocols.const_infer_binary_op
 
-    def __getattr__(self, name):
+    def __getattr__(self, name: str) -> Any:  # type: ignore[explicit-any]
         # This is needed because of Proxy's __getattr__ method.
         # Calling object.__new__ on this class without calling
         # __init__ would result in an infinite loop otherwise
