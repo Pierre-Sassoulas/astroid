@@ -467,6 +467,19 @@ class FunctionModel(ObjectModel):
 
                 # Rebuild the original value, but with the parent set as the
                 # class where it will be bound.
+                if isinstance(func, nodes.Lambda):
+                    new_lambda = nodes.Lambda(
+                        lineno=func.lineno,
+                        col_offset=func.col_offset,
+                        parent=func.parent,
+                        end_lineno=func.end_lineno,
+                        end_col_offset=func.end_col_offset,
+                    )
+                    new_lambda.postinit(func.args, func.body)
+                    proxy = bases.UnboundMethod(new_lambda)
+                    yield bases.BoundMethod(proxy=proxy, bound=cls)
+                    return
+
                 new_func_kwargs = {
                     "name": func.name,
                     "lineno": func.lineno,

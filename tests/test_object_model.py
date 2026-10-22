@@ -1190,3 +1190,24 @@ def test_getattr_on_property_fset_with_annassign_does_not_crash() -> None:
             getattr(Base.x, "fset", None)  #@
     """)
     next(node.infer())
+
+
+def test_descriptor_get_of_lambda_binds_a_lambda() -> None:
+    """``__get__`` of a lambda rebuilds a lambda bound to the given instance.
+
+    Attribute access on a lambda is not inferred, so the object model is
+    looked up directly.
+    """
+    node, call = builder.extract_node("""
+    class A:
+        pass
+    func = lambda self: 1
+    func #@
+    func.__get__(A(), A) #@
+    """)
+    func = next(node.infer())
+    descriptor_get = func.special_attributes.lookup("__get__")
+    [bound] = descriptor_get.infer_call_result(call)
+    assert isinstance(bound, bases.BoundMethod)
+    assert isinstance(bound._proxied._proxied, nodes.Lambda)
+    assert bound._proxied._proxied is not func
