@@ -539,12 +539,12 @@ def arguments_assigned_stmts(
 ) -> Any:
     from astroid import arguments  # pylint: disable=import-outside-toplevel
 
-    try:
-        node_name = node.name  # type: ignore[union-attr]
-    except AttributeError:
-        # Added to handle edge cases where node.name is not defined.
-        # https://github.com/pylint-dev/astroid/pull/1644#discussion_r901545816
-        node_name = None  # pragma: no cover
+    # ``node`` may be missing, see
+    # https://github.com/pylint-dev/astroid/pull/1644#discussion_r901545816
+    # Without the name of an argument, nothing is known about its value
+    if not isinstance(node, nodes.AssignName):
+        return iter((util.Uninferable,))
+    node_name = node.name
 
     if context and context.callcontext:
         callee = context.callcontext.callee
@@ -552,7 +552,7 @@ def arguments_assigned_stmts(
             callee = callee._proxied
     else:
         return _arguments_infer_argname(self, node_name, context)
-    if node and getattr(callee, "name", None) == node.frame().name:
+    if getattr(callee, "name", None) == node.frame().name:
         # reset call context/name
         callcontext = context.callcontext
         context = copy_context(context)
