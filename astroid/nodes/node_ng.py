@@ -152,6 +152,11 @@ class NodeNG:
             yield from context.inferred[key]
             return
 
+        if context.nodes_inferred > context.max_inferred:
+            # The budget was spent before this node: don't start inferring it.
+            yield util.Uninferable
+            return
+
         results = []
 
         # Limit inference amount to help with performance issues with
